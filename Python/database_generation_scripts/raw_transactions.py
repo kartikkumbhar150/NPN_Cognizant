@@ -574,50 +574,302 @@ def generate_description(
 
 
 # ============================================================
+# REAL PAYMENT / MONEY-FLOW RULES
+# ============================================================
+#
+# Important business rule:
+#   A merchant does NOT randomly credit a customer's bank account.
+#
+# Examples:
+#   Customer -> Insurance company     = DEBIT
+#   Customer -> Amazon                = DEBIT
+#   Employer -> Employee              = CREDIT
+#   Friend -> Customer                = CREDIT
+#   Merchant -> Customer (refund)    = CREDIT
+#   Customer -> Friend                = DEBIT
+#   ATM withdrawal                    = DEBIT
+#   Cash deposit at branch            = CREDIT
+#
+# We therefore generate INCOMING and OUTGOING transactions separately.
+# =====================================================================
+
+MERCHANT_PAYMENT_CATEGORIES = {
+    "AIRLINES", "FOOD_DELIVERY", "E_COMMERCE", "SHOPPING", "GROCERY",
+    "CAB", "BUS", "TRAIN", "HOTELS", "MOVIES", "FUEL", "UTILITIES",
+    "ENTERTAINMENT", "HEALTHCARE", "EDUCATION", "INVESTMENT", "SIP",
+    "INSURANCE", "BILLS", "RESTAURANTS", "COLLEGE_FEES", "RENT"
+}
+
+# These are genuine sources of money entering a customer's account.
+INCOMING_TYPES = [
+    ("SALARY", 45),
+    ("P2P_RECEIPT", 22),
+    ("REFUND", 12),
+    ("CASH_DEPOSIT", 6),
+    ("INTEREST", 4),
+    ("CASHBACK", 3),
+    ("REVERSAL", 2),
+    ("OTHER_BANK_TRANSFER", 6),
+]
+
+INCOMING_TYPE_NAMES = [x[0] for x in INCOMING_TYPES]
+INCOMING_TYPE_WEIGHTS = [x[1] for x in INCOMING_TYPES]
+
+# Customer -> merchant / person / account.
+OUTGOING_TYPES = [
+    ("MERCHANT_PAYMENT", 78),
+    ("P2P_TRANSFER", 10),
+    ("BILL_PAYMENT", 4),
+    ("ATM_WITHDRAWAL", 4),
+    ("CASH_WITHDRAWAL", 2),
+    ("BANK_TRANSFER", 2),
+]
+
+OUTGOING_TYPE_NAMES = [x[0] for x in OUTGOING_TYPES]
+OUTGOING_TYPE_WEIGHTS = [x[1] for x in OUTGOING_TYPES]
+
+# Estimated cash opening balance for each customer.
+# This allows us to enforce: no successful debit > available balance.
+ACCOUNT_BALANCE = {
+    customer_id: random.randint(20_000, 200_000)
+    for customer_id in CUSTOMER_IDS
+}
+
+# Some customers receive a salary; salary is always an incoming bank credit.
+# The source is the employer, not a merchant purchase.
+EMPLOYERS = [
+    ("EMP0001", "TCS"),
+    ("EMP0002", "Infosys"),
+    ("EMP0003", "HDFC Bank"),
+    ("EMP0004", "ICICI Bank"),
+    ("EMP0005", "Accenture"),
+    ("EMP0006", "Deloitte"),
+    ("EMP0007", "Capgemini"),
+    ("EMP0008", "Wipro"),
+    ("EMP0009", "Tech Mahindra"),
+    ("EMP0010", "Reliance Industries"),
+]
+
+P2P_SENDERS = [
+    ("P2P001", "Rahul"),
+    ("P2P002", "Priya"),
+    ("P2P003", "Amit"),
+    ("P2P004", "Neha"),
+    ("P2P005", "Family"),
+]
+
+REFUND_REASONS = [
+    "ORDER REFUND",
+    "CANCELLED TICKET REFUND",
+    "MERCHANT REFUND",
+    "CARD PURCHASE REFUND",
+    "EXCESS PAYMENT REFUND",
+]
+
+def random_incoming_amount(incoming_type):
+    """Generate realistic amounts for genuine credit events."""
+    ranges = {
+        "SALARY": (30_000, 2_00_000),
+        "P2P_RECEIPT": (500, 50_000),
+        "REFUND": (200, 25_000),
+        "CASH_DEPOSIT": (1_000, 75_000),
+        "INTEREST": (10, 5_000),
+        "CASHBACK": (50, 5_000),
+        "REVERSAL": (100, 20_000),
+        "OTHER_BANK_TRANSFER": (1_000, 1_00_000),
+    }
+
+    low, high = ranges[incoming_type]
+    value = random.triangular(low, high, low)
+
+    if value < 1000:
+        return round(value / 10) * 10
+    elif value < 10000:
+        return round(value / 50) * 50
+    return round(value / 100) * 100
+
+
+def random_outgoing_amount(category):
+    """Generate a payment amount, then validate it against account balance."""
+    low, high = AMOUNT_RANGES[category]
+    value = random.triangular(low, high, low)
+
+    if value < 1000:
+        return round(value / 10) * 10
+    elif value < 10000:
+        return round(value / 50) * 50
+    return round(value / 100) * 100
+
+
+def choose_payment_mode(category, outgoing_type):
+    """Choose a payment rail that makes sense for the business event."""
+    if outgoing_type == "ATM_WITHDRAWAL":
+        return "ATM"
+
+    if outgoing_type == "CASH_WITHDRAWAL":
+        return "Cash"
+
+    if outgoing_type == "P2P_TRANSFER":
+        return random.choice(["UPI", "IMPS", "NEFT"])
+
+    if outgoing_type in {"BANK_TRANSFER", "BILL_PAYMENT"}:
+        return random.choice(["UPI", "NEFT", "IMPS", "Auto Debit"])
+
+    if category in ["AIRLINES", "HOTELS", "MOVIES", "SHOPPING", "E_COMMERCE"]:
+        return random.choice(["UPI", "Debit Card", "Credit Card"])
+
+    if category in ["SIP", "INVESTMENT", "INSURANCE"]:
+        return random.choice(["UPI", "Auto Debit", "NEFT"])
+
+    if category == "BILLS":
+        return random.choice(["UPI", "Auto Debit", "Debit Card"])
+
+    return weighted_choice(MODE_NAMES, MODE_WEIGHTS)
+
+
+def build_money_flow_fields(
+    transaction_type,
+    incoming_type=None,
+    outgoing_type=None,
+    merchant_id="",
+    merchant_name="",
+    category=None
+):
+    """
+    Return source/destination fields.
+
+    For merchant purchases:
+        source = CUSTOMER ACCOUNT
+        destination = MERCHANT
+
+    For salary:
+        source = EMPLOYER
+        destination = CUSTOMER ACCOUNT
+
+    For P2P receipt:
+        source = OTHER PERSON
+        destination = CUSTOMER ACCOUNT
+    """
+    fields = {
+        "sender_name": "",
+        "sender_identifier": "",
+        "receiver_name": "",
+        "receiver_identifier": "",
+        "counterparty_type": "",
+        "fund_flow": "",
+    }
+
+    if transaction_type == "Credit":
+        fields["fund_flow"] = "INCOMING"
+
+        if incoming_type == "SALARY":
+            employer_id, employer_name = random.choice(EMPLOYERS)
+            fields["sender_name"] = employer_name
+            fields["sender_identifier"] = employer_id
+            fields["receiver_name"] = "CUSTOMER ACCOUNT"
+            fields["counterparty_type"] = "EMPLOYER"
+
+        elif incoming_type == "P2P_RECEIPT":
+            sender_id, sender_name = random.choice(P2P_SENDERS)
+            fields["sender_name"] = sender_name
+            fields["sender_identifier"] = sender_id
+            fields["receiver_name"] = "CUSTOMER ACCOUNT"
+            fields["counterparty_type"] = "P2P"
+
+        elif incoming_type in {"REFUND", "CASHBACK", "REVERSAL"}:
+            fields["sender_name"] = merchant_name or "Merchant"
+            fields["sender_identifier"] = merchant_id
+            fields["receiver_name"] = "CUSTOMER ACCOUNT"
+            fields["counterparty_type"] = (
+                "MERCHANT" if incoming_type != "REVERSAL" else "BANK"
+            )
+
+        elif incoming_type == "CASH_DEPOSIT":
+            fields["sender_name"] = "CUSTOMER"
+            fields["sender_identifier"] = ""
+            fields["receiver_name"] = "CUSTOMER ACCOUNT"
+            fields["counterparty_type"] = "SELF"
+
+        elif incoming_type == "INTEREST":
+            fields["sender_name"] = "BANK"
+            fields["sender_identifier"] = "BANK-INTEREST"
+            fields["receiver_name"] = "CUSTOMER ACCOUNT"
+            fields["counterparty_type"] = "BANK"
+
+        else:
+            fields["sender_name"] = "OTHER BANK ACCOUNT"
+            fields["sender_identifier"] = "BANK-TRANSFER"
+            fields["receiver_name"] = "CUSTOMER ACCOUNT"
+            fields["counterparty_type"] = "BANK"
+
+    else:
+        fields["fund_flow"] = "OUTGOING"
+
+        if outgoing_type == "P2P_TRANSFER":
+            receiver_id, receiver_name = random.choice(P2P_SENDERS)
+            fields["sender_name"] = "CUSTOMER"
+            fields["sender_identifier"] = ""
+            fields["receiver_name"] = receiver_name
+            fields["receiver_identifier"] = receiver_id
+            fields["counterparty_type"] = "P2P"
+
+        elif merchant_name:
+            fields["sender_name"] = "CUSTOMER ACCOUNT"
+            fields["sender_identifier"] = ""
+            fields["receiver_name"] = merchant_name
+            fields["receiver_identifier"] = (
+                f"merchant{merchant_id[-4:]}@upi"
+                if merchant_id else ""
+            )
+            fields["counterparty_type"] = "MERCHANT"
+
+        elif outgoing_type == "BANK_TRANSFER":
+            fields["sender_name"] = "CUSTOMER"
+            fields["receiver_name"] = "OTHER BANK ACCOUNT"
+            fields["receiver_identifier"] = "BANK-TRANSFER"
+            fields["counterparty_type"] = "BANK"
+
+        else:
+            fields["sender_name"] = "CUSTOMER ACCOUNT"
+            fields["receiver_name"] = "CASH / ATM"
+            fields["counterparty_type"] = "SELF"
+
+    return fields
+
+
+# ============================================================
 # GENERATE TRANSACTIONS
 # ============================================================
 
 transactions = []
 
-# Salary transactions happen separately
-salary_transactions = []
-
 for customer_id in CUSTOMER_IDS:
 
-    # 6-12 salary credits for most customers
+    # --------------------------------------------------------
+    # 1. MONTHLY SALARY CREDITS
+    # --------------------------------------------------------
+    # Salary is never generated as a "merchant payment".
+    # Employer is the actual sender of funds.
+    # --------------------------------------------------------
     if random.random() < 0.90:
 
-        number_of_salary_credits = random.randint(8, 12)
+        salary_months = random.randint(8, 12)
 
-        for month_index in range(number_of_salary_credits):
+        for month_index in range(salary_months):
+            salary_date = END_DATE - timedelta(days=30 * (month_index + 1))
+            salary_date = salary_date.replace(day=random.randint(1, 7))
 
-            salary_date = END_DATE - timedelta(
-                days=random.randint(
-                    0,
-                    30 * (month_index + 1)
-                )
-            )
-
-            salary_date = salary_date.replace(
-                day=random.randint(1, 7)
-            )
-
+            employer_id, employer_name = random.choice(EMPLOYERS)
             salary_amount = random.choice([
-                30000,
-                40000,
-                50000,
-                60000,
-                75000,
-                90000,
-                100000,
-                125000,
-                150000,
-                200000
+                30_000, 40_000, 50_000, 60_000,
+                75_000, 90_000, 1_00_000,
+                1_25_000, 1_50_000, 2_00_000
             ])
 
             transaction_id = f"TX{len(transactions) + 1:08d}"
+            reference_number = generate_reference()
 
-            salary_transactions.append({
+            transactions.append({
                 "transaction_id": transaction_id,
                 "customer_id": customer_id,
                 "account_id": ACCOUNT_IDS[customer_id],
@@ -632,168 +884,405 @@ for customer_id in CUSTOMER_IDS:
                 "transaction_status": "Success",
 
                 "merchant_id": "",
-                "merchant_name": "Employer",
-                "receiver_name": customer_id,
+                "merchant_name": "",
+                "receiver_name": "CUSTOMER ACCOUNT",
                 "receiver_identifier": "",
                 "mcc_code": "",
-                "transaction_description": "SALARY CREDIT",
-                "reference_number": generate_reference(),
+                "transaction_description": f"SALARY CREDIT/{employer_name.upper()}",
+                "reference_number": reference_number,
 
                 "channel": "Internet Banking",
                 "location_city": "",
                 "location_state": "",
                 "location_country": "India",
-                "created_at": salary_date.strftime(
-                    "%Y-%m-%d %H:%M:%S"
-                ),
-                "updated_at": salary_date.strftime(
-                    "%Y-%m-%d %H:%M:%S"
-                ),
+
+                "sender_name": employer_name,
+                "sender_identifier": employer_id,
+                "counterparty_type": "EMPLOYER",
+                "fund_flow": "INCOMING",
+
+                "created_at": salary_date.strftime("%Y-%m-%d %H:%M:%S"),
+                "updated_at": salary_date.strftime("%Y-%m-%d %H:%M:%S"),
             })
 
-# Add salary transactions
-transactions.extend(salary_transactions)
+            ACCOUNT_BALANCE[customer_id] += salary_amount
 
-# Remaining random transactions
+    # --------------------------------------------------------
+# 2. OTHER REALISTIC TRANSACTIONS
+# --------------------------------------------------------
 while len(transactions) < NUM_TRANSACTIONS:
-
-    customer_id = random.choice(CUSTOMER_IDS)
 
     transaction_datetime = random_datetime()
 
-    category = weighted_choice(
-        CATEGORIES,
-        WEIGHTS
-    )
+    # Use the customer whose transaction is being generated.
+    # We choose an account first so balance validation is per account.
+    customer_id = random.choice(CUSTOMER_IDS)
+    account_id = ACCOUNT_IDS[customer_id]
+    city, state, country = random.choice(CITIES)
 
-    merchant_data = random.choice(MERCHANTS[category])
-    merchant_id, merchant_name, mcc_code = merchant_data
+    # ~85% outgoing payments, ~15% genuine incoming credits.
+    is_incoming = random.random() < 0.15
 
-    transaction_mode = weighted_choice(
-        MODE_NAMES,
-        MODE_WEIGHTS
-    )
+    # ====================================================
+    # INCOMING MONEY
+    # ====================================================
+    if is_incoming:
 
-    # Keep transaction mode sensible
-    if category in ["AIRLINES", "HOTELS", "MOVIES"]:
-        transaction_mode = random.choice([
-            "Credit Card",
-            "Debit Card",
-            "UPI"
-        ])
+        incoming_type = weighted_choice(
+            INCOMING_TYPE_NAMES,
+            INCOMING_TYPE_WEIGHTS
+        )
 
-    elif category in ["SIP", "INVESTMENT", "INSURANCE"]:
-        transaction_mode = random.choice([
-            "UPI",
-            "Auto Debit",
-            "NEFT"
-        ])
-
-    elif category in ["BILLS"]:
-        transaction_mode = random.choice([
-            "UPI",
-            "Auto Debit",
-            "Debit Card"
-        ])
-
-    elif category in ["TRAIN", "BUS"]:
-        transaction_mode = random.choice([
-            "UPI",
-            "Debit Card",
-            "Credit Card"
-        ])
-
-    amount = random_amount(category)
-
-    # Most generated transactions are debits.
-    transaction_type = "Debit"
-
-    # Occasionally create credits/refunds.
-    if random.random() < 0.05:
+        # No merchant purchase category is selected for a normal credit.
+        merchant_id = ""
+        merchant_name = ""
+        mcc_code = ""
+        amount = random_incoming_amount(incoming_type)
 
         transaction_type = "Credit"
 
-        if category in [
-            "E_COMMERCE",
-            "SHOPPING",
-            "FOOD_DELIVERY"
-        ]:
-            amount = random_amount(category)
+        # Refund / cashback / reversal must have a real merchant source.
+        if incoming_type in {"REFUND", "CASHBACK", "REVERSAL"}:
+            refund_category = random.choice([
+                "E_COMMERCE",
+                "SHOPPING",
+                "FOOD_DELIVERY",
+                "AIRLINES",
+                "HOTELS",
+                "RESTAURANTS",
+                "INSURANCE",
+                "BILLS",
+            ])
 
-    # Card ID only for card transactions
-    card_id = ""
+            merchant_id, merchant_name, mcc_code = random.choice(
+                MERCHANTS[refund_category]
+            )
 
-    if transaction_mode in [
-        "Credit Card",
-        "Debit Card"
-    ]:
-        if random.random() < CARD_USAGE_PROBABILITY:
-            card_id = CARD_IDS[customer_id]
+            # Refunds cannot exceed a plausible purchase amount.
+            amount = min(
+                amount,
+                ACCOUNT_BALANCE[customer_id] * 0.50 + amount
+            )
 
-    # Channel
-    channel = weighted_choice(
-        CHANNEL_NAMES,
-        CHANNEL_WEIGHTS
-    )
+        if incoming_type == "SALARY":
+            mode = "NEFT"
+            channel = "Internet Banking"
+            description = "SALARY CREDIT"
 
-    if transaction_mode == "UPI":
-        channel = random.choice([
-            "Mobile App",
-            "UPI App"
-        ])
+        elif incoming_type == "P2P_RECEIPT":
+            mode = random.choice(["UPI", "IMPS", "NEFT"])
+            channel = "UPI App" if mode == "UPI" else "Mobile App"
+            description = "P2P RECEIPT"
 
-    elif transaction_mode == "ATM":
-        channel = "ATM"
+        elif incoming_type == "REFUND":
+            mode = random.choice(["UPI", "NEFT", "IMPS"])
+            channel = "Mobile App"
+            description = f"REFUND/{merchant_name.upper()}/{generate_reference()}"
 
-    elif transaction_mode == "Cash":
-        channel = "Branch"
+        elif incoming_type == "CASH_DEPOSIT":
+            mode = "Cash"
+            channel = "Branch"
+            description = "CASH DEPOSIT"
 
-    elif transaction_mode == "Auto Debit":
-        channel = "Auto Debit"
+        elif incoming_type == "INTEREST":
+            mode = "NEFT"
+            channel = "Banking System"
+            description = "INTEREST CREDIT"
 
-    # Location
-    city, state, country = random.choice(CITIES)
+        elif incoming_type == "CASHBACK":
+            mode = "UPI"
+            channel = "Mobile App"
+            description = f"CASHBACK/{merchant_name.upper()}"
 
-    # Reference
-    reference_number = generate_reference()
+        elif incoming_type == "REVERSAL":
+            mode = "Reversal"
+            channel = "Banking System"
+            description = f"PAYMENT REVERSAL/{merchant_name.upper()}"
 
-    # Receiver
-    receiver_name = merchant_name
+        else:
+            mode = random.choice(["NEFT", "IMPS", "RTGS"])
+            channel = "Internet Banking"
+            description = "BANK TRANSFER CREDIT"
 
-    receiver_identifier = generate_receiver_identifier(
-        category,
-        merchant_id
-    )
+        money_flow = build_money_flow_fields(
+            "Credit",
+            incoming_type=incoming_type,
+            merchant_id=merchant_id,
+            merchant_name=merchant_name
+        )
 
-    # Description
-    description = generate_description(
-        category,
-        merchant_name,
-        transaction_mode,
-        reference_number
-    )
+    # ====================================================
+    # OUTGOING MONEY
+    # ====================================================
+    else:
 
-    # Occasional failed transaction
+        # 90% of outgoing money is a genuine merchant purchase/bill.
+        outgoing_type = weighted_choice(
+            OUTGOING_TYPE_NAMES,
+            OUTGOING_TYPE_WEIGHTS
+        )
+
+        # Merchant payment / bill payment
+        if outgoing_type in {"MERCHANT_PAYMENT", "BILL_PAYMENT"}:
+
+            if outgoing_type == "BILL_PAYMENT":
+                category = random.choice(["BILLS", "UTILITIES"])
+            else:
+                category = weighted_choice(CATEGORIES, WEIGHTS)
+
+            # Every merchant/insurance payment is an OUTGOING debit.
+            transaction_type = "Debit"
+
+            merchant_id, merchant_name, mcc_code = random.choice(
+                MERCHANTS[category]
+            )
+
+            amount = random_outgoing_amount(category)
+
+            # Never create a successful debit larger than available cash.
+            available_balance = ACCOUNT_BALANCE[customer_id]
+
+            if available_balance < amount:
+                # Keep the requested category but make the amount affordable.
+                low, high = AMOUNT_RANGES[category]
+
+                if available_balance < max(100, low):
+                    # The account cannot afford this payment.
+                    # Replace this event with a genuine incoming event.
+                    is_incoming = True
+                    continue
+
+                amount = random.uniform(
+                    low,
+                    min(high, available_balance)
+                )
+
+            amount = round(amount, 2)
+
+            mode = choose_payment_mode(category, outgoing_type)
+
+            if category == "INSURANCE":
+                description = f"INSURANCE PREMIUM/{merchant_name.upper()}"
+            elif category == "RENT":
+                description = f"RENT PAYMENT/{merchant_name.upper()}"
+            elif category in {"SIP", "INVESTMENT"}:
+                description = f"{category} PAYMENT/{merchant_name.upper()}"
+            else:
+                reference = generate_reference()
+                description = generate_description(
+                    category,
+                    merchant_name,
+                    mode,
+                    reference
+                )
+
+            channel = weighted_choice(
+                CHANNEL_NAMES,
+                CHANNEL_WEIGHTS
+            )
+
+            if mode == "UPI":
+                channel = random.choice(["Mobile App", "UPI App"])
+            elif mode == "ATM":
+                channel = "ATM"
+            elif mode == "Cash":
+                channel = "Branch"
+            elif mode == "Auto Debit":
+                channel = "Auto Debit"
+
+            money_flow = build_money_flow_fields(
+                "Debit",
+                outgoing_type=outgoing_type,
+                merchant_id=merchant_id,
+                merchant_name=merchant_name,
+                category=category
+            )
+
+            # Credit-card purchase creates card liability rather than
+            # immediately reducing the customer's bank cash balance.
+            if mode != "Credit Card":
+                ACCOUNT_BALANCE[customer_id] -= amount
+
+        # Person-to-person transfer
+        elif outgoing_type == "P2P_TRANSFER":
+
+            category = "P2P"
+            merchant_id = ""
+            merchant_name = ""
+            mcc_code = ""
+
+            amount = random_amount("P2P")
+
+            available_balance = ACCOUNT_BALANCE[customer_id]
+            if available_balance < 100:
+                continue
+
+            if available_balance < amount:
+                amount = round(
+                    random.uniform(100, available_balance),
+                    2
+                )
+
+            mode = choose_payment_mode(category, outgoing_type)
+            channel = "UPI App" if mode == "UPI" else "Mobile App"
+
+            transaction_type = "Debit"
+            description = f"P2P TRANSFER/{generate_reference()}"
+
+            money_flow = build_money_flow_fields(
+                "Debit",
+                outgoing_type=outgoing_type
+            )
+
+            ACCOUNT_BALANCE[customer_id] -= amount
+
+        # Bank transfer
+        elif outgoing_type == "BANK_TRANSFER":
+
+            category = "P2P"
+            merchant_id = ""
+            merchant_name = ""
+            mcc_code = ""
+
+            available_balance = ACCOUNT_BALANCE[customer_id]
+            if available_balance < 1_000:
+                continue
+
+            amount = random.uniform(1_000, 50_000)
+            amount = round(min(amount, available_balance), 2)
+
+            mode = random.choice(["NEFT", "IMPS", "RTGS"])
+            channel = "Internet Banking"
+
+            transaction_type = "Debit"
+            description = f"BANK TRANSFER/{generate_reference()}"
+
+            money_flow = build_money_flow_fields(
+                "Debit",
+                outgoing_type=outgoing_type
+            )
+
+            ACCOUNT_BALANCE[customer_id] -= amount
+
+        # ATM withdrawal
+        elif outgoing_type == "ATM_WITHDRAWAL":
+
+            category = "CASH_WITHDRAWAL"
+            merchant_id = ""
+            merchant_name = ""
+            mcc_code = ""
+
+            available_balance = ACCOUNT_BALANCE[customer_id]
+            if available_balance < 500:
+                continue
+
+            amount = random.choice([
+                500, 1000, 2000, 3000, 5000, 10000
+            ])
+
+            amount = min(amount, available_balance)
+
+            mode = "ATM"
+            channel = "ATM"
+            transaction_type = "Debit"
+            description = "ATM CASH WITHDRAWAL"
+
+            money_flow = build_money_flow_fields(
+                "Debit",
+                outgoing_type=outgoing_type
+            )
+
+            ACCOUNT_BALANCE[customer_id] -= amount
+
+        # Branch cash withdrawal
+        else:
+
+            category = "CASH_WITHDRAWAL"
+            merchant_id = ""
+            merchant_name = ""
+            mcc_code = ""
+
+            available_balance = ACCOUNT_BALANCE[customer_id]
+            if available_balance < 2_000:
+                continue
+
+            amount = random.choice([
+                2_000, 5_000, 10_000, 20_000, 50_000
+            ])
+
+            amount = min(amount, available_balance)
+
+            mode = "Cash"
+            channel = "Branch"
+            transaction_type = "Debit"
+            description = "CASH WITHDRAWAL"
+
+            money_flow = build_money_flow_fields(
+                "Debit",
+                outgoing_type=outgoing_type
+            )
+
+            ACCOUNT_BALANCE[customer_id] -= amount
+
+    # ----------------------------------------------------
+    # Status rules
+    # ----------------------------------------------------
+    # Failed/reversed transactions must not change the final
+    # available balance.
+    #
+    # The balance has already been updated for successful
+    # outgoing transactions, so put it back if the event fails.
+    # ----------------------------------------------------
+    status = "Success"
+
+    # Keep failed events rare, but do not create impossible
+    # "failed credits" that change balance.
     if random.random() < 0.02:
         status = "Failed"
 
-    else:
-        status = "Success"
-
-    # Very occasional reversal
-    if random.random() < 0.005 and status == "Success":
+    elif random.random() < 0.005:
         status = "Reversed"
 
-    transaction_id = (
-        f"TX{len(transactions) + 1:08d}"
-    )
+    if transaction_type == "Credit":
+        if status == "Success":
+            ACCOUNT_BALANCE[customer_id] += amount
 
-    transaction = {
+        # For failed/reversed incoming credits, do not add money.
+
+    else:
+        # Failed/reversed cash-account debits are rolled back.
+        # Credit-card purchases never reduced the bank cash balance.
+        if mode != "Credit Card":
+            if status == "Failed":
+                ACCOUNT_BALANCE[customer_id] += amount
+
+            elif status == "Reversed":
+                ACCOUNT_BALANCE[customer_id] += amount
+
+    # ----------------------------------------------------
+    # Card ID only for actual card payments.
+    # ----------------------------------------------------
+    card_id = ""
+    if mode in {"Credit Card", "Debit Card"}:
+        if random.random() < CARD_USAGE_PROBABILITY:
+            card_id = CARD_IDS[customer_id]
+
+    reference_number = generate_reference()
+
+    # Merchant fields are deliberately blank for salary/P2P/
+    # bank transfers/cash operations. A merchant is a payee,
+    # not an arbitrary source of credit.
+    receiver_name = money_flow["receiver_name"]
+    receiver_identifier = money_flow["receiver_identifier"]
+
+    transaction_id = f"TX{len(transactions) + 1:08d}"
+
+    transactions.append({
         "transaction_id": transaction_id,
 
         "customer_id": customer_id,
 
-        "account_id": ACCOUNT_IDS[customer_id],
+        "account_id": account_id,
 
         "card_id": card_id,
 
@@ -807,7 +1296,7 @@ while len(transactions) < NUM_TRANSACTIONS:
             transaction_type,
 
         "transaction_mode":
-            transaction_mode,
+            mode,
 
         "amount":
             round(amount, 2),
@@ -843,13 +1332,26 @@ while len(transactions) < NUM_TRANSACTIONS:
             channel,
 
         "location_city":
-            city,
+            city if 'city' in locals() else "",
 
         "location_state":
-            state,
+            state if 'state' in locals() else "",
 
         "location_country":
-            country,
+            "India",
+
+        # New fields explaining the actual money movement.
+        "sender_name":
+            money_flow["sender_name"],
+
+        "sender_identifier":
+            money_flow["sender_identifier"],
+
+        "counterparty_type":
+            money_flow["counterparty_type"],
+
+        "fund_flow":
+            money_flow["fund_flow"],
 
         "created_at":
             transaction_datetime.strftime(
@@ -860,12 +1362,11 @@ while len(transactions) < NUM_TRANSACTIONS:
             transaction_datetime.strftime(
                 "%Y-%m-%d %H:%M:%S"
             ),
-    }
-
-    transactions.append(transaction)
+    })
 
 # ============================================================
 # SORT BY DATE/TIME
+
 # ============================================================
 
 transactions.sort(
@@ -905,6 +1406,12 @@ FIELDNAMES = [
     "location_city",
     "location_state",
     "location_country",
+
+    # Money-flow / counterparty fields
+    "sender_name",
+    "sender_identifier",
+    "counterparty_type",
+    "fund_flow",
 
     "created_at",
     "updated_at",
@@ -990,5 +1497,14 @@ for category, count in sorted(
     reverse=True
 ):
     print(f"{category:20s}: {count}")
+
+print("\nMoney-flow distribution:")
+flow_counts = {}
+for t in transactions:
+    key = t["transaction_type"] + " / " + t["counterparty_type"]
+    flow_counts[key] = flow_counts.get(key, 0) + 1
+
+for key, count in sorted(flow_counts.items(), key=lambda x: x[1], reverse=True):
+    print(f"{key:30s}: {count}")
 
 print("=" * 60)
