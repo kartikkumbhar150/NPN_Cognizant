@@ -21,20 +21,32 @@ from app.models.personalization import (
     ValidationInfo,
     ValidationStatus,
 )
+from app.models.product import (
+    CreditCardProduct,
+    GroundedFact,
+    GroundedFactCategory,
+    GroundedProductFacts,
+    ProductStatus,
+)
 
 __all__ = [
     "Channel",
     "ChannelContent",
+    "CreditCardProduct",
     "DecisionContext",
     "EligibilityStatus",
     "EmailContent",
     "GenerationMetadata",
     "GenerationResponse",
+    "GroundedFact",
+    "GroundedFactCategory",
+    "GroundedProductFacts",
     "InAppContent",
     "OwnershipStatus",
     "PersonalizationRequest",
     "Preferences",
     "ProductFamily",
+    "ProductStatus",
     "PushContent",
     "RecentEvent",
     "RecommendedProduct",
