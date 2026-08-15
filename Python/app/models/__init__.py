@@ -29,6 +29,7 @@ from app.models.product import (
     ProductStatus,
 )
 from app.models.prompt import PromptPackage
+from app.models.generation import GeneratedContent
 
 __all__ = [
     "Channel",
@@ -41,6 +42,7 @@ __all__ = [
     "GenerationResponse",
     "GroundedFact",
     "GroundedFactCategory",
+    "GeneratedContent",
     "GroundedProductFacts",
     "InAppContent",
     "OwnershipStatus",

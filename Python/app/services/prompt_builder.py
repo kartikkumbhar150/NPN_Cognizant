@@ -187,6 +187,9 @@ class PromptBuilder:
             requested_channels=requested_channels,
             allowed_fact_ids=allowed_fact_ids,
             language=request.preferences.language,
+            # Safe structured view of the approved facts (product facts only),
+            # so providers can reference values without parsing prompt text.
+            fact_values={fact["fact_id"]: fact["value"] for fact in facts},
         )
 
     # ------------------------------------------------------------------
