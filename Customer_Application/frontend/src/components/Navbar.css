@@ -1,0 +1,20 @@
+.navbar {
+  display: flex; align-items: center; gap: 16px;
+  padding: 0 36px; height: 64px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 100;
+}
+.nav-brand    { display: flex; align-items: center; gap: 8px; margin-right: 24px; }
+.nav-logo     { background: linear-gradient(135deg, var(--primary), var(--primary2)); color: #fff; padding: 4px 10px; border-radius: 8px; font-weight: 800; font-size: .9rem; letter-spacing: 1px; }
+.nav-title    { font-weight: 700; font-size: 1.1rem; color: var(--text); }
+.nav-links    { display: flex; gap: 4px; flex: 1; }
+.nav-link     { padding: 8px 16px; border-radius: 8px; color: var(--text2); font-size: .9rem; font-weight: 500; text-decoration: none; transition: all .2s; }
+.nav-link:hover      { background: var(--surface2); color: var(--text); }
+.nav-link-active     { background: rgba(99,102,241,.15); color: var(--primary); }
+.nav-user     { display: flex; align-items: center; gap: 12px; margin-left: auto; }
+.nav-avatar   { width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), var(--primary2)); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: .85rem; color: #fff; }
+.nav-name     { font-size: .85rem; font-weight: 600; }
+.nav-id       { font-size: .75rem; color: var(--text2); }
+.btn-logout   { padding: 6px 14px; border-radius: 8px; border: 1px solid var(--border); background: transparent; color: var(--text2); font-size: .8rem; cursor: pointer; transition: all .2s; }
+.btn-logout:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
