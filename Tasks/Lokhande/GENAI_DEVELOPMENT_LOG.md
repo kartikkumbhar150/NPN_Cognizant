@@ -112,13 +112,92 @@ history.** This log is documentation only — it must never drive production cod
   team-leader review.
 - **Next task:** DS-02 — Catalogue repository and product grounding
 
+### DS-02 Entry — Credit Card Catalogue Repository + Product Grounding
+
+- **Task ID and title:** DS-02 — Credit Card Catalogue Repository + Product Grounding
+- **Date:** 2026-08-15
+- **Objective:** Let Phase 6 safely retrieve an already-selected product
+  (`CREDIT_CARD` / `CC014`) from the prototype CSV catalogue and expose only
+  allowlisted, unambiguous facts suitable for future GenAI grounding.
+  Service/repository layer only — no API route, no LLM, no prompts, no
+  campaigns, no persistence.
+- **Model used:** DeepSeek (deepseek-v4-flash) — primary implementation model.
+- **Why that model was used:** Assigned coding model for the session; the work is
+  deterministic service/repository code with strict data validation — no
+  LLM-specific reasoning required.
+- **Architecture/review model, if different:** Codex — none for implementation.
+  No architecture problem forced escalation; the DS-01 scope audit carried
+  forward unchanged.
+- **Research papers/resources consulted:** None. **No external research paper
+  required for DS-02.** CSV/pydantic stdlib behaviour was verified empirically
+  where needed (see Problems & Decisions Register).
+- **Why each source was relevant:** N/A (see Research Library).
+- **Important findings adopted from each source:** N/A for papers. Catalogue
+  findings adopted from inspecting the real CSV and its generation script:
+  - 101-column schema, 32 products, no duplicate IDs, no blank cells; all rows
+    `Active` with `end_date=2099-12-31` (no real inactive/expired rows).
+  - Generation script documents sentinels: `TEXT_DEFAULT="Not Applicable"`,
+    `NUM_DEFAULT=0`, `BOOL_DEFAULT="No"`.
+  - `999` appears in lounge-visit counts (`priority_pass_visits`,
+    `domestic_lounge_visits`) with **no documented "unlimited" semantic** →
+    treated as an ambiguous sentinel and omitted from grounded facts.
+  - `renewal_fee_waiver` values (300000–1000000) are spend thresholds for fee
+    waiver, not fees → parsed but never grounded.
+  - `product_description` is the generic "HDFC Bank credit card product." for
+    31/32 products → not product-specific → omitted (`approved_description` is
+    `None` for CC014).
+  - CC014 international-lounge data is contradictory (`access=Yes`,
+    `visits=0`, `priority_pass=No`) → international lounge facts omitted.
+- **Files changed:**
+  - Created: `Python/app/models/product.py`, `Python/app/repositories/__init__.py`,
+    `Python/app/repositories/product_catalogue.py`, `Python/app/services/__init__.py`,
+    `Python/app/services/product_grounding.py`, `Python/tests/unit/test_product_catalogue.py`,
+    `Python/tests/unit/test_product_grounding.py`
+  - Modified: `Python/app/models/__init__.py` (exports only),
+    `Tasks/Lokhande/GENAI_DEVELOPMENT_LOG.md` (this entry)
+  - Untouched: `Python/Database_csvs/**`, `Python/database_generation_scripts/**`,
+    `Backend/**`, `Frontend/**`, `Python/main.py`, `Python/app/main.py`,
+    `Python/requirements.txt` (no new dependencies)
+- **Problems encountered:** P-006, P-007, P-008, P-009 (see Register).
+- **Root cause:** see Register.
+- **Fix/decision:** see Register; allowlist design decisions above (999, waiver
+  threshold, generic description, contradictory international lounge data).
+- **Tests run:** `cd Python && /tmp/ds01-venv/bin/python -m pytest tests/ -q`
+  (full suite incl. DS-01 regression); plus a sanity print of grounded real
+  `CC014` output.
+- **Test results:** **49 passed** (24 DS-01 regression + 25 new DS-02), 0 failures.
+- **Known limitations:**
+  - `CREDIT_CARD` only; other families are rejected
+    (`UnsupportedProductFamilyError`), unreachable until `ProductFamily` grows.
+  - Fee facts expose raw amounts (`"2500"`) without currency formatting —
+    formatting is the future generator's job.
+  - No `forex_markup`, eligibility, or credit-limit facts (ambiguous / out of
+    allowlist).
+  - Only `status` + `end_date` are enforced; `launch_date` is not parsed.
+  - Catalogue is loaded fully into memory per repository instance (32 rows —
+    fine for the prototype).
+- **Dependencies/blockers:** none new (`csv`, `hashlib`, `json` stdlib). No
+  upstream NBO engine still (fixture-driven).
+- **Lessons learned:**
+  - Sentinel semantics must come from the data producer's documentation; an
+    undocumented `999` must never be read as "unlimited".
+  - Parse a curated typed subset at the repository, project an explicit
+    allowlist at the service — raw rows never leave.
+  - Hash only the grounded projection so the catalogue version changes iff a
+    citable fact changes.
+- **Branch:** `feature/genai-ds01-fastapi-contracts`
+- **Commit:** `2dd750447cef6136f30036a1ee55c70aa7d63c8f`
+- **PR status:** Not opened (no PR requested). Branch pushed to `origin` for
+  team-leader review.
+- **Next task:** DS-03 — Versioned prompt templates and safe prompt builder
+
 ---
 
 ## Research Library
 
 | Title | Authors/Org | Year | URL / DOI / arXiv | Topic | Why consulted | Used by task | Ideas adopted | Ideas rejected / not used |
 |---|---|---|---|---|---|---|---|---|
-| — | — | — | — | — | No external research was required for DS-01. Populate from DS-02 onwards (product grounding, RAG / hallucination control papers). | — | — | — | — |
+| — | — | — | — | — | No external research was required for DS-01 or DS-02. Populate from DS-03 onwards (prompt engineering, RAG / hallucination control papers). | — | — | — | — |
 
 ---
 
@@ -132,6 +211,7 @@ only how they were used.
 |---|---|---|---|---|---|
 | DeepSeek (deepseek-v4-flash) | Primary implementation model | DS-01 — FastAPI scaffold, strict Phase 6 contracts, unit tests | Assigned coding model for the session; adequate for scaffold + contract work | 24/24 tests passed; `/health` HTTP 200; commit `6642470` | No — Codex performed an architecture audit / contract design review in parallel |
 | Codex | Repository architecture audit and contract design | DS-01 — verify repo state, team boundaries, forbidden paths, contract shape | Independent second set of eyes on scope and git safety | Confirmed scope boundaries and contract structure before implementation | N/A (review role) |
+| DeepSeek (deepseek-v4-flash) | Primary implementation model | DS-02 — catalogue repository, grounding service, tests | Assigned coding model for the session; deterministic service/data code, no LLM reasoning needed | 49/49 tests passed (incl. DS-01 regression); commit `2dd7504` | No — Codex not used for DS-02 implementation |
 
 ---
 
@@ -144,8 +224,8 @@ Fields recorded per model: model/algorithm · purpose · dataset · dataset vers
 features · train/validation/test split · hyperparameters · metrics · random seed ·
 training date · artifact location · issues · final result.
 
-> **Status (DS-01):** No Phase 6 LLM has been trained or fine-tuned. The first LLM
-> work (DS-02+) is expected to use a third-party provider API with prompt
+> **Status (as of DS-02):** No Phase 6 LLM has been trained or fine-tuned. The LLM
+> work (DS-03+) is expected to use a third-party provider API with prompt
 > engineering and product grounding — not custom training. This section stays empty
 > until an actual model is trained.
 
@@ -162,3 +242,7 @@ Chronological, append-only.
 | P-003 | DS-01 | `Field(strict=False)` on a `list[Channel]` container did not relax the items | The strict flag is not propagated from a container field to its items | Per-item annotation: `list[Annotated[Channel, Field(strict=False)]]` | Resolved |
 | P-004 | DS-01 | No Python dependencies pre-installed (fresh env, Python 3.14) | Empty `requirements.txt`, no venv | Isolated venv at `/tmp/ds01-venv` for verification; deps declared (unpinned) in `requirements.txt` | Resolved |
 | P-005 | DS-01 | `__pycache__` / `.pytest_cache` artifacts left in the tree by test runs | Python bytecode + pytest cache generation | Removed before commit; never staged | Resolved |
+| P-006 | DS-02 | Test fixture `cc_row()` called with `card_name=` kwarg, but signature is `(overrides, product_id)` | Fixture signature mismatch in test authoring | Call via `cc_row(product_id=..., overrides={"card_name": ...})` | Resolved |
+| P-007 | DS-02 | `csv.DictWriter` ValueError: fixture row contained `cashback_available`, which is not in `REQUIRED_COLUMNS` | Fixture included a column the repository intentionally never parses | Removed the key — cashback is out of the parse allowlist by design | Resolved |
+| P-008 | DS-02 | Test fixture `tag_golf=0` drifted from the real CC014 row (`tag_golf=1`) | Hand-authored fixture, not generated from data | Set `tag_golf=1` in fixtures and updated expected tags (GOLF) | Resolved |
+| P-009 | DS-02 | `999` sentinel in lounge-visit counts (e.g. `priority_pass_visits=999`, `domestic_lounge_visits=999`) | Generation script documents `0`/`No`/`Not Applicable` defaults but not `999` | Treat as undocumented sentinel; omit from grounded facts; never interpret as unlimited | Resolved (decision) |
