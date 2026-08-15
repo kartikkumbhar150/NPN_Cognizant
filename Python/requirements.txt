@@ -1,0 +1,7 @@
+# DS-01 — FastAPI scaffold and strict Phase 6 contracts.
+# Deliberately minimal: no LLM SDKs, no database or vector-store libraries.
+fastapi
+uvicorn
+pydantic
+pytest
+httpx
