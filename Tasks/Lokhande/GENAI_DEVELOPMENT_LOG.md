@@ -329,13 +329,84 @@ history.** This log is documentation only — it must never drive production cod
 - **Next task:** DS-05 — Deterministic hallucination guard and generated-content
   safety validation
 
+### DS-05 Entry — Deterministic Hallucination Guard + Generated-Content Safety Validation
+
+- **Task ID and title:** DS-05 — Deterministic Hallucination Guard + Generated-Content
+  Safety Validation
+- **Date:** 2026-08-15
+- **Objective:** Deterministically decide whether generated Phase 6 content is safe:
+  compare every customer-facing text field against the approved grounded product
+  facts and produce a structured PASSED/FAILED result. Not another LLM — the
+  catalogue (via `GroundedProductFacts`) is the factual authority.
+- **Model used:** DeepSeek (deepseek-v4-flash) — development coding agent.
+- **Why that model was used:** Assigned coding model; deterministic regex/model
+  code, no LLM-specific reasoning.
+- **Architecture/review model, if different:** Codex — none for implementation.
+  No escalation required.
+- **Research papers/resources consulted:** None. **No external research paper
+  required for DS-05 implementation.** (No documentation beyond project code
+  was consulted.)
+- **Why each source was relevant:** N/A (see Research Library).
+- **Files changed:**
+  - Created: `Python/app/models/validation.py` (`ViolationCode`, `Violation`,
+    `ValidationResult`), `Python/app/services/hallucination_guard.py`,
+    `Python/tests/unit/test_hallucination_guard.py`,
+    `Python/tests/unit/test_hallucination_guard_adversarial.py`,
+    `Python/tests/integration/test_phase6_safety_composition.py`
+  - Modified: `Python/app/models/__init__.py` (exports),
+    `Tasks/Lokhande/GENAI_DEVELOPMENT_LOG.md` (this entry)
+- **Safety architecture:** `HallucinationGuard.validate(GeneratedContent,
+  GroundedProductFacts) -> ValidationResult`. Builds a derived context from
+  grounded facts (allowed fact ids, supported numbers, lounge counts, reward/
+  cashback/insurance/free/multiplier support) and runs per-field checks on
+  every text field of every populated channel (push title/body, sms body,
+  email subject/preheader/body/cta, in-app headline/body/cta, RM
+  opening/talking points/closing). Valid `fact_refs` never make content safe by
+  themselves — text is checked independently. No customer objects enter the
+  guard; tests inject a safe `prohibited_identifiers` set for PII checks.
+- **Violation codes (17):** `UNKNOWN_FACT_REFERENCE`, `UNSUPPORTED_PRODUCT_NAME`,
+  `UNSUPPORTED_MONETARY_CLAIM`, `UNSUPPORTED_PERCENTAGE_CLAIM`,
+  `UNSUPPORTED_RATE_CLAIM`, `UNSUPPORTED_REWARD_CLAIM`, `UNSUPPORTED_LOUNGE_CLAIM`,
+  `UNSUPPORTED_INSURANCE_CLAIM`, `UNSUPPORTED_ELIGIBILITY_CLAIM`,
+  `PROHIBITED_ABSOLUTE_CLAIM`, `UNAPPROVED_URL`, `UNAPPROVED_PHONE_NUMBER`,
+  `UNAPPROVED_DEADLINE`, `UNAPPROVED_OFFER_CODE`, `PII_LEAK`,
+  `INTERNAL_IDENTIFIER_LEAK`, `CHANNEL_LENGTH_EXCEEDED`.
+- **Parsing/normalization decisions:** currency/percent/multiplier/lounge-count
+  regex extraction with conservative normalization (commas stripped, whitespace
+  collapsed, case-insensitive keyword matching, decimals preserved). Supported
+  numbers are derived from grounded fact values (excluding `product_id`); an
+  amount/percent only passes if present in an approved fact. No heavyweight NLP.
+- **Problems encountered:** P-016, P-017, P-018 (see Register).
+- **Fixes/decisions:** see Register.
+- **Adversarial tests:** invented fee `₹999`, `5% cashback`, `8.5% interest`,
+  `10x reward points`, wrong lounge counts, `unlimited`/`free`/`999` lounge,
+  insurance, guaranteed/pre-approved wording, URLs, phones (`9876543210`,
+  `+91 …`, `1800-…`), deadlines, offer codes, PII/internal-id leaks, and length
+  overruns — all FAILED with the expected controlled code(s); a single
+  malicious body produced 4 structured violations.
+- **Tests/results:** `cd Python && /tmp/ds01-venv/bin/python -m pytest tests/ -q`
+  → **133 passed** (90 baseline + 43 new: 15 basic + 26 adversarial + 2
+  integration). `/health` remains the only route.
+- **Limitations:** deterministic regex prototype — not a DLP system; a number
+  present in any grounded fact passes the membership check (e.g. dining `10`
+  also permits `₹10`); currency-less bare fee amounts are not flagged;
+  `known_product_names`/`prohibited_identifiers` are injected by callers/tests.
+  No regeneration/fallback (DS-06).
+- **Dependency added:** none.
+- **Branch:** `feature/genai-ds01-fastapi-contracts`
+- **Commit:** `acb00e64d1910ff7d5b4c23488de355b25f8d282`
+- **PR status:** Not opened (no PR requested). Branch pushed to `origin` for
+  team-leader review.
+- **Next task:** DS-06 — Personalization orchestrator, bounded regeneration and
+  internal FastAPI API
+
 ---
 
 ## Research Library
 
 | Title | Authors/Org | Year | URL / DOI / arXiv | Topic | Why consulted | Used by task | Ideas adopted | Ideas rejected / not used |
 |---|---|---|---|---|---|---|---|---|
-| — | — | — | — | — | No external research was required for DS-01 through DS-04. Populate from DS-05 onwards (hallucination detection, claim extraction, evaluation). | — | — | — | — |
+| — | — | — | — | — | No external research was required for DS-01 through DS-05. Populate from DS-06 onwards (orchestration, evaluation, feedback). | — | — | — | — |
 
 ---
 
@@ -352,6 +423,7 @@ only how they were used.
 | DeepSeek (deepseek-v4-flash) | Primary implementation model | DS-02 — catalogue repository, grounding service, tests | Assigned coding model for the session; deterministic service/data code, no LLM reasoning needed | 49/49 tests passed (incl. DS-01 regression); commit `2dd7504` | No — Codex not used for DS-02 implementation |
 | DeepSeek (deepseek-v4-flash) | Primary implementation model | DS-03 — versioned prompt templates + safe prompt builder | Assigned coding model for the session; deterministic template/builder code with strict validation | 68/68 tests passed (incl. DS-01 + DS-02 regression); commit `091be5c` | No — Codex not used for DS-03 implementation |
 | DeepSeek (deepseek-v4-flash) | Development coding agent | DS-04 — provider abstraction + deterministic fake provider | Assigned coding model; runtime provider abstraction kept provider-neutral (not coupled to DeepSeek) | 90/90 tests passed (incl. DS-01..DS-03 regression); commit `a4b7a6d` | No — Codex not used for DS-04 implementation |
+| DeepSeek (deepseek-v4-flash) | Development coding agent | DS-05 — deterministic hallucination guard | Assigned coding model; deterministic regex/model safety code | 133/133 tests passed (incl. DS-01..DS-04 regression); commit `acb00e6` | No — Codex not used for DS-05 implementation |
 
 ---
 
@@ -392,3 +464,6 @@ Chronological, append-only.
 | P-013 | DS-03 | Hardcoded fact example `["product_name", "domestic_lounge_visits"]` in the template leaked a non-grounded id | Concrete example was not guaranteed to be grounded | Removed the concrete example; the `Allowed fact IDs` line provides the guidance | Resolved |
 | P-014 | DS-04 | Fake provider needed approved fact *values*, but `PromptPackage` carried only rendered text + `allowed_fact_ids` | Parsing rendered prompt text would be fragile | Extended `PromptPackage` with a safe structured `fact_values` view (product facts only, populated by the builder) — no privacy impact | Resolved (decision) |
 | P-015 | DS-04 | `inspect.signature` returned the annotation as the string `'PromptPackage'` | `from __future__ import annotations` defers annotation evaluation | Test accepts class-or-string form; also switched deprecated `asyncio.iscoroutinefunction` to `inspect.iscoroutinefunction` | Resolved |
+| P-016 | DS-05 | Product-identity check early-returned when the correct product name was present, so a co-occurring wrong product name was missed | Early return on grounded-name match | Iterate all known product names; flag any known name that is not the grounded product name | Resolved |
+| P-017 | DS-05 | `_normalize_number` truncated decimals (`8.5%` became `8`) | `int(float(...))` coercion in normalization | Keep decimal tokens as-is; strip commas and leading zeros only | Resolved |
+| P-018 | DS-05 | Supported-number membership derived from all grounded fact values | Design trade-off | Amounts/percentages only pass if the number appears in an approved fact; document the looseness (a fact's number passes regardless of claim type) and keep currency-indicated money checks | Resolved (decision) |
