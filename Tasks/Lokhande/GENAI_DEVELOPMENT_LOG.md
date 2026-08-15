@@ -191,13 +191,90 @@ history.** This log is documentation only — it must never drive production cod
   team-leader review.
 - **Next task:** DS-03 — Versioned prompt templates and safe prompt builder
 
+### DS-03 Entry — Versioned Prompt Templates + Safe Prompt Builder
+
+- **Task ID and title:** DS-03 — Versioned Prompt Templates + Safe Prompt Builder
+- **Date:** 2026-08-15
+- **Objective:** Prepare the LLM input for Phase 6: project a safe, explicit
+  context from the request + grounded product, render it through versioned
+  Jinja2 templates, and return a typed `PromptPackage`. Prepares input only —
+  no LLM call, no network, no provider, no API route.
+- **Model used:** DeepSeek (deepseek-v4-flash) — primary implementation model.
+- **Why that model was used:** Assigned coding model for the session; the work
+  is deterministic template/builder code with strict validation — no
+  LLM-specific reasoning required.
+- **Architecture/review model, if different:** Codex — none for implementation.
+  No architecture problem forced escalation.
+- **Research papers/resources consulted:** None. **No external research paper
+  required for DS-03.** Jinja2 include/newline behaviour was verified
+  empirically in the venv.
+- **Why each source was relevant:** N/A (see Research Library).
+- **Important findings adopted from each source:** N/A for papers. Empirical
+  Jinja2 findings: dynamic `{% include %}` resolves against the loader root
+  (not relative to the including template), and Jinja2 strips trailing
+  newlines unless `keep_trailing_newline=True`.
+- **Files changed:**
+  - Created: `Python/app/prompts/__init__.py`, `Python/app/prompts/v1/system.jinja2`,
+    `Python/app/prompts/v1/personalization.jinja2`,
+    `Python/app/prompts/v1/channels/{push,sms,email,in_app,relationship_manager}.jinja2`,
+    `Python/app/models/prompt.py`, `Python/app/services/prompt_builder.py`,
+    `Python/tests/unit/test_prompt_builder.py`
+  - Modified: `Python/app/models/__init__.py` (exports),
+    `Python/requirements.txt` (added `jinja2`),
+    `Tasks/Lokhande/GENAI_DEVELOPMENT_LOG.md` (this entry)
+- **Prompt privacy design:** The builder never serializes `PersonalizationRequest`
+  (no `request.model_dump()`). Rendered prompts contain only: mapped segment
+  label, mapped generic event labels, persuasion reason labels, generation
+  language, requested channels, and approved grounded facts + tags. Excluded:
+  `customer_id`, `recommendation_id`, `source_event_id`, account/card/
+  transaction IDs, contact/address/KYC/income/credit-score data, employer,
+  transaction amounts, RM ID, propensity, and detailed eligibility/ownership
+  data. System prompt states the product was selected and approved upstream
+  and forbids re-evaluating eligibility/propensity/ownership.
+- **Controlled mappings:** `FREQUENT_TRAVELLER → frequent traveller`;
+  `FLIGHT_PURCHASE → recent flight purchase`; reason codes
+  `HIGH_TRAVEL_SPEND/RECENT_FLIGHT_PURCHASE → high travel spending / recent
+  flight purchase` (persuasion subset only — the safety codes
+  `NO_CONFLICTING_TRAVEL_CARD`/`PRODUCT_ELIGIBLE` are validated but excluded).
+  Unknown values fail at the boundary (`PromptContextError`,
+  `PROMPT_CONTEXT_INVALID`). v1 supports language `en` only.
+- **Problems encountered:** P-010, P-011, P-012, P-013 (see Register).
+- **Root cause:** see Register.
+- **Fix/decision:** see Register.
+- **Tests run:** `cd Python && /tmp/ds01-venv/bin/python -m pytest tests/ -q`
+  (full suite); manual render inspection of system + user prompts.
+- **Test results:** **68 passed** (24 DS-01 + 25 DS-02 + 19 new DS-03), 0 failures.
+- **Known limitations:**
+  - v1 supports `en` only; other languages are rejected.
+  - Only `FLIGHT_PURCHASE` / `FREQUENT_TRAVELLER` and the four fixture reason
+    codes are mapped; anything else fails at the builder boundary (by design).
+  - Length limits are prototype constants (`60`/`160` chars) injected into
+    templates — tuning is expected later.
+  - No output-schema enforcement yet (DS-04/DS-06 concern); the prompt only
+    instructs the future LLM.
+- **Dependencies/blockers:** added `jinja2` to `requirements.txt` (only new
+  dependency). No provider, no network, no API route.
+- **Lessons learned:**
+  - Jinja2 dynamic includes resolve against the loader root — pass
+    version-prefixed paths; and set `keep_trailing_newline=True` so included
+    sections stay separated.
+  - Concrete fact-id examples in prompts leak ids that may not be grounded —
+    keep examples generic or dynamic.
+  - Failing loudly on unknown mapping values is safer than silently leaking
+    raw codes into prompts.
+- **Branch:** `feature/genai-ds01-fastapi-contracts`
+- **Commit:** `091be5cd1bb4860bb5470bd497542e02cbc7b75d`
+- **PR status:** Not opened (no PR requested). Branch pushed to `origin` for
+  team-leader review.
+- **Next task:** DS-04 — LLM abstraction and deterministic fake provider
+
 ---
 
 ## Research Library
 
 | Title | Authors/Org | Year | URL / DOI / arXiv | Topic | Why consulted | Used by task | Ideas adopted | Ideas rejected / not used |
 |---|---|---|---|---|---|---|---|---|
-| — | — | — | — | — | No external research was required for DS-01 or DS-02. Populate from DS-03 onwards (prompt engineering, RAG / hallucination control papers). | — | — | — | — |
+| — | — | — | — | — | No external research was required for DS-01, DS-02, or DS-03. Populate from DS-04 onwards (LLM abstraction / evaluation, RAG / hallucination control papers). | — | — | — | — |
 
 ---
 
@@ -212,6 +289,7 @@ only how they were used.
 | DeepSeek (deepseek-v4-flash) | Primary implementation model | DS-01 — FastAPI scaffold, strict Phase 6 contracts, unit tests | Assigned coding model for the session; adequate for scaffold + contract work | 24/24 tests passed; `/health` HTTP 200; commit `6642470` | No — Codex performed an architecture audit / contract design review in parallel |
 | Codex | Repository architecture audit and contract design | DS-01 — verify repo state, team boundaries, forbidden paths, contract shape | Independent second set of eyes on scope and git safety | Confirmed scope boundaries and contract structure before implementation | N/A (review role) |
 | DeepSeek (deepseek-v4-flash) | Primary implementation model | DS-02 — catalogue repository, grounding service, tests | Assigned coding model for the session; deterministic service/data code, no LLM reasoning needed | 49/49 tests passed (incl. DS-01 regression); commit `2dd7504` | No — Codex not used for DS-02 implementation |
+| DeepSeek (deepseek-v4-flash) | Primary implementation model | DS-03 — versioned prompt templates + safe prompt builder | Assigned coding model for the session; deterministic template/builder code with strict validation | 68/68 tests passed (incl. DS-01 + DS-02 regression); commit `091be5c` | No — Codex not used for DS-03 implementation |
 
 ---
 
@@ -246,3 +324,7 @@ Chronological, append-only.
 | P-007 | DS-02 | `csv.DictWriter` ValueError: fixture row contained `cashback_available`, which is not in `REQUIRED_COLUMNS` | Fixture included a column the repository intentionally never parses | Removed the key — cashback is out of the parse allowlist by design | Resolved |
 | P-008 | DS-02 | Test fixture `tag_golf=0` drifted from the real CC014 row (`tag_golf=1`) | Hand-authored fixture, not generated from data | Set `tag_golf=1` in fixtures and updated expected tags (GOLF) | Resolved |
 | P-009 | DS-02 | `999` sentinel in lounge-visit counts (e.g. `priority_pass_visits=999`, `domestic_lounge_visits=999`) | Generation script documents `0`/`No`/`Not Applicable` defaults but not `999` | Treat as undocumented sentinel; omit from grounded facts; never interpret as unlimited | Resolved (decision) |
+| P-010 | DS-03 | Jinja2 dynamic `{% include %}` did not resolve `channels/push.jinja2` relative to the including template | Dynamic includes resolve against the loader root, not the including template's directory | Pass version-prefixed paths (`v1/channels/<name>.jinja2`) from the builder | Resolved |
+| P-011 | DS-03 | Rendered channel sections merged (`fact_refs.[EMAIL]`) | Jinja2 strips trailing template newlines unless `keep_trailing_newline=True` | Enable `keep_trailing_newline=True` in the builder Environment | Resolved |
+| P-012 | DS-03 | Unknown reason codes / event types / segment codes reaching the prompt | No policy for unknown controlled values | Fail at the builder boundary with `PromptContextError` (`PROMPT_CONTEXT_INVALID`) rather than leaking raw codes | Resolved (decision) |
+| P-013 | DS-03 | Hardcoded fact example `["product_name", "domestic_lounge_visits"]` in the template leaked a non-grounded id | Concrete example was not guaranteed to be grounded | Removed the concrete example; the `Allowed fact IDs` line provides the guidance | Resolved |
