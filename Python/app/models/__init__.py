@@ -30,6 +30,7 @@ from app.models.product import (
 )
 from app.models.prompt import PromptPackage
 from app.models.generation import GeneratedContent
+from app.models.validation import ValidationResult, Violation, ViolationCode
 
 __all__ = [
     "Channel",
@@ -57,5 +58,8 @@ __all__ = [
     "RelationshipManagerContent",
     "SmsContent",
     "ValidationInfo",
+    "ValidationResult",
     "ValidationStatus",
+    "Violation",
+    "ViolationCode",
 ]
