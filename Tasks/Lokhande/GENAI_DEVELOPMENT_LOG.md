@@ -268,13 +268,74 @@ history.** This log is documentation only — it must never drive production cod
   team-leader review.
 - **Next task:** DS-04 — LLM abstraction and deterministic fake provider
 
+### DS-04 Entry — LLM Abstraction + Deterministic Fake Provider
+
+- **Task ID and title:** DS-04 — LLM Abstraction + Deterministic Fake Provider
+- **Date:** 2026-08-15
+- **Objective:** Establish the provider boundary through which Phase 6 will
+  eventually talk to a real LLM: a provider-neutral async contract plus a
+  deterministic, offline, API-key-free fake provider for tests/CI/demos. No
+  real LLM is called; no provider SDK, no network, no API route, no
+  hallucination guard.
+- **Model used:** DeepSeek (deepseek-v4-flash) — development coding agent only.
+- **Why that model was used:** Assigned coding model for the session. Important
+  distinction: DeepSeek writes this repository's code; the runtime provider
+  abstraction is deliberately **provider-neutral** and is NOT coupled to
+  DeepSeek merely because DeepSeek is the coding agent.
+- **Architecture/review model, if different:** Codex — none for implementation.
+  No escalation required.
+- **Research papers/resources consulted:** None. **No external research paper
+  required for DS-04.**
+- **Why each source was relevant:** N/A (see Research Library).
+- **Files changed:**
+  - Created: `Python/app/llm/{__init__,base,fake,errors}.py`,
+    `Python/app/models/generation.py`, `Python/tests/unit/test_llm_provider.py`,
+    `Python/tests/unit/test_fake_llm_provider.py`, `Python/tests/integration/{__init__,test_phase6_composition}.py`
+  - Modified: `Python/app/models/prompt.py` (added `fact_values` safe view),
+    `Python/app/models/__init__.py` (exports), `Python/app/services/prompt_builder.py`
+    (populates `fact_values`), `Tasks/Lokhande/GENAI_DEVELOPMENT_LOG.md` (this entry)
+- **Provider architecture:** `LLMProvider` protocol (async `generate(prompt:
+  PromptPackage) -> GeneratedContent`, plus `provider`/`model` attributes),
+  `@runtime_checkable` for isinstance tests. Errors: `LLMProviderError` /
+  `LLMProviderTimeoutError` / `LLMInvalidResponseError` (`LLM_PROVIDER_ERROR` /
+  `LLM_PROVIDER_TIMEOUT` / `LLM_INVALID_RESPONSE`). Timeout/retry contract left
+  for later DS work (no resilience framework built).
+- **Fake provider design:** `DeterministicFakeProvider(provider="fake",
+  model="deterministic-v1")` — no randomness, no network, no API key. Derives
+  content from `PromptPackage.fact_values` (product facts only) so nothing is
+  hardcoded (verified with a non-CC014 product name). Supports canned
+  `response=` injection and `mode=` failure simulation
+  (`SUCCESS`/`INVALID_RESPONSE`/`TIMEOUT`/`PROVIDER_ERROR`). Validates gross
+  structural problems at the boundary: channels not requested →
+  `LLM_INVALID_RESPONSE`; unknown fact refs → `LLM_INVALID_RESPONSE`; malformed
+  canned content → `LLM_INVALID_RESPONSE`. No global mutable state.
+- **Output model:** `GeneratedContent` reuses DS-01 channel models
+  (`PushContent` etc.) with optional per-channel fields (only requested
+  channels populated, at least one required) — smaller than DS-01's
+  all-channels `ChannelContent`, with explicit `populated_channels()`.
+- **Tests/results:** `cd Python && /tmp/ds01-venv/bin/python -m pytest tests/ -q`
+  → **90 passed** (68 baseline + 22 new: 9 provider + 12 fake + 1
+  integration-shaped composition). Composition test wires
+  request → grounding → PromptBuilder → fake provider end to end.
+- **Failures/problems:** P-014, P-015 (see Register).
+- **Decisions:** see Register and above.
+- **Limitations:** no real provider; no timeout/retry implementation; provider
+  validates structure only — semantic claim validation is DS-05.
+- **Dependency added:** none (zero new third-party dependencies).
+- **Branch:** `feature/genai-ds01-fastapi-contracts`
+- **Commit:** `a4b7a6dc9220affad55aadbe2d32feba870d9780`
+- **PR status:** Not opened (no PR requested). Branch pushed to `origin` for
+  team-leader review.
+- **Next task:** DS-05 — Deterministic hallucination guard and generated-content
+  safety validation
+
 ---
 
 ## Research Library
 
 | Title | Authors/Org | Year | URL / DOI / arXiv | Topic | Why consulted | Used by task | Ideas adopted | Ideas rejected / not used |
 |---|---|---|---|---|---|---|---|---|
-| — | — | — | — | — | No external research was required for DS-01, DS-02, or DS-03. Populate from DS-04 onwards (LLM abstraction / evaluation, RAG / hallucination control papers). | — | — | — | — |
+| — | — | — | — | — | No external research was required for DS-01 through DS-04. Populate from DS-05 onwards (hallucination detection, claim extraction, evaluation). | — | — | — | — |
 
 ---
 
@@ -290,6 +351,7 @@ only how they were used.
 | Codex | Repository architecture audit and contract design | DS-01 — verify repo state, team boundaries, forbidden paths, contract shape | Independent second set of eyes on scope and git safety | Confirmed scope boundaries and contract structure before implementation | N/A (review role) |
 | DeepSeek (deepseek-v4-flash) | Primary implementation model | DS-02 — catalogue repository, grounding service, tests | Assigned coding model for the session; deterministic service/data code, no LLM reasoning needed | 49/49 tests passed (incl. DS-01 regression); commit `2dd7504` | No — Codex not used for DS-02 implementation |
 | DeepSeek (deepseek-v4-flash) | Primary implementation model | DS-03 — versioned prompt templates + safe prompt builder | Assigned coding model for the session; deterministic template/builder code with strict validation | 68/68 tests passed (incl. DS-01 + DS-02 regression); commit `091be5c` | No — Codex not used for DS-03 implementation |
+| DeepSeek (deepseek-v4-flash) | Development coding agent | DS-04 — provider abstraction + deterministic fake provider | Assigned coding model; runtime provider abstraction kept provider-neutral (not coupled to DeepSeek) | 90/90 tests passed (incl. DS-01..DS-03 regression); commit `a4b7a6d` | No — Codex not used for DS-04 implementation |
 
 ---
 
@@ -328,3 +390,5 @@ Chronological, append-only.
 | P-011 | DS-03 | Rendered channel sections merged (`fact_refs.[EMAIL]`) | Jinja2 strips trailing template newlines unless `keep_trailing_newline=True` | Enable `keep_trailing_newline=True` in the builder Environment | Resolved |
 | P-012 | DS-03 | Unknown reason codes / event types / segment codes reaching the prompt | No policy for unknown controlled values | Fail at the builder boundary with `PromptContextError` (`PROMPT_CONTEXT_INVALID`) rather than leaking raw codes | Resolved (decision) |
 | P-013 | DS-03 | Hardcoded fact example `["product_name", "domestic_lounge_visits"]` in the template leaked a non-grounded id | Concrete example was not guaranteed to be grounded | Removed the concrete example; the `Allowed fact IDs` line provides the guidance | Resolved |
+| P-014 | DS-04 | Fake provider needed approved fact *values*, but `PromptPackage` carried only rendered text + `allowed_fact_ids` | Parsing rendered prompt text would be fragile | Extended `PromptPackage` with a safe structured `fact_values` view (product facts only, populated by the builder) — no privacy impact | Resolved (decision) |
+| P-015 | DS-04 | `inspect.signature` returned the annotation as the string `'PromptPackage'` | `from __future__ import annotations` defers annotation evaluation | Test accepts class-or-string form; also switched deprecated `asyncio.iscoroutinefunction` to `inspect.iscoroutinefunction` | Resolved |
