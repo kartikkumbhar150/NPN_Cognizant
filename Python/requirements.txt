@@ -5,3 +5,5 @@ uvicorn
 pydantic
 pytest
 httpx
+# DS-03 — versioned prompt templates use Jinja2.
+jinja2

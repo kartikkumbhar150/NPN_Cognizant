@@ -1,0 +1,39 @@
+TASK
+Write personalized marketing copy for the approved product using ONLY the
+context below. Generation language: {{ language }}.
+
+CUSTOMER CONTEXT (controlled, non-identifying)
+{% if segment_label %}
+- behavioral segment: {{ segment_label }}
+{% endif %}
+{% for label in event_labels %}
+- recent event: {{ label }}
+{% endfor %}
+{% if reason_labels %}
+- context signals: {{ ", ".join(reason_labels) }}
+{% endif %}
+
+APPROVED PRODUCT FACTS
+{% for fact in facts %}
+- [{{ fact.fact_id }}] {{ fact.value }}
+{% endfor %}
+{% if product_tags %}
+PRODUCT TAGS (qualitative signals only)
+{{ ", ".join(product_tags) }}
+IMPORTANT: Product tags are qualitative signals, not quantified entitlements.
+Never convert a tag into a specific numeric claim (for example, never state a
+number of lounge visits from the AIRPORT_LOUNGE tag) unless an approved
+product fact above supplies that number.
+
+{% endif %}
+OUTPUT REQUIREMENTS BY CHANNEL
+The following channels were requested, in this order:
+{{ ", ".join(channel_names) }}
+{% for template in channel_templates %}
+{% include template %}
+{% endfor %}
+FACT REFERENCES
+For every channel, include a fact_refs list naming the fact IDs from the
+approved facts you actually used.
+Allowed fact IDs: {{ ", ".join(allowed_fact_ids) }}
+Use only these fact IDs. Do not invent new fact IDs.

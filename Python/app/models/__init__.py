@@ -28,6 +28,7 @@ from app.models.product import (
     GroundedProductFacts,
     ProductStatus,
 )
+from app.models.prompt import PromptPackage
 
 __all__ = [
     "Channel",
@@ -47,6 +48,7 @@ __all__ = [
     "Preferences",
     "ProductFamily",
     "ProductStatus",
+    "PromptPackage",
     "PushContent",
     "RecentEvent",
     "RecommendedProduct",
