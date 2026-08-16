@@ -1,9 +1,12 @@
 import os
+import json
+import logging
 from groq import Groq
 from dotenv import load_dotenv
 
 load_dotenv()  # Load variables from .env file
 
+logger = logging.getLogger(__name__)
 
 class GenAIService:
     def __init__(self):
@@ -13,46 +16,55 @@ class GenAIService:
         if not self.use_mock:
             self.client = Groq(api_key=self.api_key)
 
-    def generate_marketing_message(self, customer_data, nbo_result, financial_analysis=None):
-        """Phase 7: GenAI Personalization — uses real financial context when available."""
-
+    def generate_marketing_message(self, customer_data, nbo_result, explanation, channel="email"):
+        """
+        Phase 7: GenAI Personalization.
+        Uses structured explanation and outputs strict JSON.
+        LLM does NO decisioning here — it only translates reasons into a nice tone.
+        """
         first_name = customer_data.get("first_name", "Customer")
-        product    = nbo_result["specific_product"]
-        reasons    = nbo_result.get("reasons", [])
+        product = nbo_result.get("specific_product", "our services")
+        
+        # Get customer-facing reasons from ExplainabilityEngine output
+        reasons = explanation.get("customer_reasons", [])
+        if not reasons:
+            reasons = ["This product is well-suited to your current financial needs."]
 
-        # Build rich financial context block for the prompt
-        financial_context = self._build_financial_context(financial_analysis)
+        # Structured constraints
+        max_words = 150 if channel == "email" else 40
+        format_instructions = "1 subject line, 1 short greeting, 2 short paragraphs, 1 CTA." if channel == "email" else "1 short sentence, 1 CTA link."
 
-        prompt = f"""You are a world-class banking marketing copywriter working for a premium Indian bank.
-Write a highly personalised, empathetic, and persuasive email for the customer below.
+        prompt = f"""You are a world-class banking marketing copywriter.
+Write a personalized {channel} for the customer below.
 
-CUSTOMER FINANCIAL PROFILE:
-{financial_context}
-
+CUSTOMER NAME: {first_name}
 RECOMMENDED PRODUCT: {product}
 
-WHY WE ARE RECOMMENDING THIS:
+WHY WE ARE RECOMMENDING THIS (Use these exact reasons, do not invent new ones):
 {chr(10).join(['- ' + r for r in reasons])}
 
-WRITING INSTRUCTIONS:
-1. Start with: Subject: [catchy, personalised subject line]
-2. Address the customer as {first_name} — be warm, not salesy.
-3. Reference their ACTUAL financial situation (use the real numbers from the profile above).
-4. Explain how {product} directly solves their specific gap.
-5. Keep the email body under 160 words. Use short paragraphs.
-6. End with a single, clear call-to-action.
-7. Do NOT invent product features. Be honest and direct.
-8. Tone: professional, friendly, empathetic — like a trusted financial advisor."""
+STRICT INSTRUCTIONS:
+1. Do NOT invent product features, interest rates, or eligibility claims.
+2. Tone: professional, empathetic, clear.
+3. Max words: {max_words}
+4. Format: {format_instructions}
+
+OUTPUT FORMAT: You MUST return valid JSON exactly matching this schema:
+{{
+  "subject": "Catchy subject line (or notification title)",
+  "body": "The main message body text"
+}}
+"""
 
         if self.use_mock:
-            return self._mock_llm_call(customer_data, nbo_result, financial_analysis).replace("\r", "")
+            return self._mock_llm_call(first_name, product, reasons, channel)
         else:
             try:
                 response = self.client.chat.completions.create(
                     messages=[
                         {
                             "role": "system",
-                            "content": "You are a world-class marketing copywriter for a premium Indian bank. You write personalised, data-driven, empathetic emails.",
+                            "content": "You are a banking marketing API. You only respond with valid JSON.",
                         },
                         {
                             "role": "user",
@@ -60,113 +72,37 @@ WRITING INSTRUCTIONS:
                         },
                     ],
                     model="llama-3.1-8b-instant",
-                    temperature=0.65,
-                    max_tokens=400,
+                    temperature=0.4,
+                    max_tokens=300,
+                    response_format={"type": "json_object"}
                 )
-                return response.choices[0].message.content.strip().replace("\r", "")
+                content = response.choices[0].message.content.strip()
+                parsed = json.loads(content)
+                return f"Subject: {parsed.get('subject', '')}\n\n{parsed.get('body', '')}"
             except Exception as e:
-                fallback = self._mock_llm_call(customer_data, nbo_result, financial_analysis)
-                return (f"[Groq API Error] {str(e)}\n\nFallback Message:\n" + fallback).replace("\r", "")
+                logger.error(f"GenAI Service Error: {e}")
+                return self._mock_llm_call(first_name, product, reasons, channel)
 
     # ─────────────────────────────────────────────────────────────────────────
     # Helpers
     # ─────────────────────────────────────────────────────────────────────────
 
-    def _build_financial_context(self, analysis):
-        """Convert financial analysis dict into a readable context string for the LLM."""
-        if not analysis:
-            return "  (No detailed financial analysis available)"
-
-        ip  = analysis.get("income_profile", {})
-        sp  = analysis.get("spending_profile", {})
-        hs  = analysis.get("health_score", {})
-        gaps = analysis.get("gaps", [])
-
-        lines = []
-
-        monthly_income = ip.get("monthly_avg_income", 0)
-        if monthly_income:
-            lines.append(f"  Monthly Income: Rs.{monthly_income:,.0f}")
-            lines.append(f"  Annual Income (observed): Rs.{ip.get('annual_income_observed', 0):,.0f}")
-
-        monthly_spend = sp.get("monthly_total_spend", 0)
-        savings_rate  = sp.get("savings_rate", 0)
-        if monthly_spend:
-            lines.append(f"  Monthly Spending: Rs.{monthly_spend:,.0f}")
-            lines.append(f"  Monthly Savings: Rs.{sp.get('monthly_savings', 0):,.0f} ({savings_rate*100:.1f}% savings rate)")
-
-        cat = sp.get("category_breakdown", {})
-        if cat:
-            lines.append("  Category breakdown (monthly average):")
-            for c, d in sorted(cat.items(), key=lambda x: x[1]["monthly_avg"], reverse=True):
-                lines.append(f"    - {c}: Rs.{d['monthly_avg']:,.0f} ({d['pct_of_income']*100:.1f}% of income)")
-
-        if hs:
-            lines.append(f"  Financial Health Score: {hs.get('score', 0)}/100 — {hs.get('grade', 'Unknown')}")
-
-        if gaps:
-            lines.append("  Key Financial Gaps Detected:")
-            for g in gaps[:3]:
-                lines.append(f"    [{g['severity']}/10] {g['title']}")
-
-        return "\n".join(lines) if lines else "  (No detailed financial analysis available)"
-
-    def _mock_llm_call(self, customer_data, nbo_result, financial_analysis=None):
-        """Gap-aware mock message when no LLM is available."""
-        first_name = customer_data.get("first_name", "there")
-        product    = nbo_result["specific_product"]
-        gap_code   = nbo_result.get("gap_code", "")
-
-        # Gap-specific mock templates
-        templates = {
-            "NO_INVESTMENT": lambda: (
-                f"Subject: {first_name}, your money is sitting idle — let's change that\n\n"
+    def _mock_llm_call(self, first_name, product, reasons, channel):
+        """Structured mock fallback when no LLM is available or it fails."""
+        reason_text = reasons[0] if reasons else "We believe this will help you achieve your financial goals."
+        
+        if channel == "email":
+            return (
+                f"Subject: {first_name}, a personalized recommendation just for you\n\n"
                 f"Hi {first_name},\n\n"
-                f"We noticed something important: you have a strong, regular income but your money isn't working for you.\n\n"
-                f"A {product} is a simple, low-risk way to start building real wealth — even starting at just Rs.2,000/month can make a significant difference over time.\n\n"
-                f"We've pre-selected a plan that matches your income level. Takes less than 5 minutes to get started.\n\n"
-                f"Best regards,\nYour Banking Partner"
-            ),
-            "NO_INSURANCE": lambda: (
-                f"Subject: {first_name}, are you financially protected if something goes wrong?\n\n"
-                f"Hi {first_name},\n\n"
-                f"We've noticed you have no active insurance coverage. With the healthcare costs you've already incurred, "
-                f"a single medical emergency could significantly impact your finances.\n\n"
-                f"Our {product} covers hospitalisation, critical illness, and more — at a premium that fits your budget.\n\n"
-                f"Protect yourself and your family today.\n\n"
-                f"Best regards,\nYour Banking Partner"
-            ),
-            "TRAVELLER_NO_CARD": lambda: (
-                f"Subject: {first_name}, you're spending a lot on travel — are you earning rewards?\n\n"
-                f"Hi {first_name},\n\n"
-                f"You're clearly a frequent traveller, but your spending isn't earning you anything back.\n\n"
-                f"Our {product} gives you air miles on every booking, free lounge access, and travel insurance — "
-                f"all on money you're already spending.\n\n"
-                f"Apply today and make every trip more rewarding.\n\n"
-                f"Best regards,\nYour Banking Partner"
-            ),
-            "CRITICAL_SAVINGS": lambda: (
-                f"Subject: {first_name}, a small step today can secure your tomorrow\n\n"
-                f"Hi {first_name},\n\n"
-                f"We've noticed your monthly savings are lower than they could be. "
-                f"A {product} is a simple, safe way to lock in a portion of your income each month — "
-                f"so you build a financial cushion without even thinking about it.\n\n"
-                f"Guaranteed returns, zero market risk.\n\n"
-                f"Best regards,\nYour Banking Partner"
-            ),
-        }
-
-        template_fn = templates.get(gap_code)
-        if template_fn:
-            return template_fn()
-
-        # Generic fallback
-        reasons = nbo_result.get("reasons", ["We think this is the right fit for you."])
-        return (
-            f"Subject: {first_name}, a personalised offer just for you\n\n"
-            f"Hi {first_name},\n\n"
-            f"Based on your financial profile, we'd like to recommend our {product}.\n\n"
-            f"{reasons[0]}\n\n"
-            f"Get in touch with your relationship manager or apply online today.\n\n"
-            f"Best regards,\nYour Banking Partner"
-        )
+                f"{reason_text}\n\n"
+                f"We recommend exploring {product} as a way to support your financial journey. "
+                f"It's designed to align with your current patterns.\n\n"
+                f"Tap here to view the details in your banking app.\n\n"
+                f"Best regards,\nNPN Bank"
+            )
+        else:
+            return (
+                f"Subject: New Recommendation: {product}\n\n"
+                f"Hi {first_name}, {reason_text.lower()} Check out {product} in your app today."
+            )

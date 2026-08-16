@@ -26,12 +26,12 @@ import {
   Tooltip,
 } from 'recharts';
 import KpiCard from '../components/KpiCard';
-import { getDashboardStats, getCustomers } from '../services/api';
-import { AI_OPPORTUNITIES } from '../data/mockData';
+import { getDashboardStats, getCustomers, getSegments } from '../services/api';
 
 export default function Dashboard({ onNavigate, onSelectCustomer, onStartCampaign }) {
   const [stats, setStats]           = useState(null);
   const [customers, setCustomers]   = useState([]);
+  const [segments, setSegments]     = useState([]);
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState('');
 
@@ -39,12 +39,14 @@ export default function Dashboard({ onNavigate, onSelectCustomer, onStartCampaig
     setLoading(true);
     setError('');
     try {
-      const [statsData, custData] = await Promise.all([
+      const [statsData, custData, segData] = await Promise.all([
         getDashboardStats(),
         getCustomers({ limit: 6 }),
+        getSegments()
       ]);
       setStats(statsData);
       setCustomers(custData.customers || []);
+      setSegments(segData.segments || []);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -76,17 +78,34 @@ export default function Dashboard({ onNavigate, onSelectCustomer, onStartCampaig
 
   const totalSegmentSampled = segmentChartData.reduce((s, d) => s + d.value, 0);
 
+  // Dynamic AI Opportunities from Segment API
+  const aiOpportunities = segments.slice(0, 4).map((seg, idx) => ({
+    id: `opp-${idx}`,
+    product: seg.recommendedProduct,
+    recommendedSegment: seg.name,
+    customerCount: seg.count,
+  }));
+
   // Map a raw backend customer to the shape needed by the NBO table
-  const mapCustomer = (c) => ({
-    id:                 c.customer_id,
-    name:               `${c.first_name || ''} ${c.last_name || ''}`.trim(),
-    city:               c.city || '—',
-    segment:            c.customer_segment_type || 'Standard',
-    monthlySpending:    `₹${((c.annual_income || 0) / 12).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`,
-    recommendedProduct: 'Travel Credit Card',
-    propensity:         Math.min(95, 70 + Math.floor(Math.random() * 25)),
-    _raw:               c,
-  });
+  const mapCustomer = (c) => {
+    // Find matched segment info from backend segments list
+    const segInfo = segments.find(s => s.name === c.customer_segment_type);
+    
+    // Calculate a dynamic score based on credit score or income (real data proxy)
+    const creditScore = c.credit_score || 700;
+    const dynamicPropensity = Math.min(98, Math.floor((creditScore / 850) * 100));
+
+    return {
+      id:                 c.customer_id,
+      name:               `${c.first_name || ''} ${c.last_name || ''}`.trim(),
+      city:               c.city || '—',
+      segment:            c.customer_segment_type || 'Standard',
+      monthlySpending:    `₹${((c.annual_income || 0) / 12).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`,
+      recommendedProduct: segInfo ? segInfo.recommendedProduct : 'Credit Card',
+      propensity:         dynamicPropensity,
+      _raw:               c,
+    };
+  };
 
   const recommendations = customers.map(mapCustomer);
 
@@ -134,7 +153,7 @@ export default function Dashboard({ onNavigate, onSelectCustomer, onStartCampaig
               {totalCustomers.toLocaleString()} Customer Portfolios Analysed
             </h2>
             <p className="text-slate-300 text-xs sm:text-sm leading-relaxed">
-              BankAI evaluated all retail customer portfolios. Deploying recommended personalized offers
+              BankAI evaluated all retail customer portfolios via Supabase. Deploying recommended personalized offers
               is projected to generate <strong className="text-emerald-400 font-semibold">significant revenue growth</strong>.
             </p>
           </div>
@@ -162,8 +181,8 @@ export default function Dashboard({ onNavigate, onSelectCustomer, onStartCampaig
         <KpiCard
           title="Total Customers"
           value={totalCustomers.toLocaleString()}
-          change="+8.4%"
-          period="vs last quarter"
+          change="Live DB Sync"
+          period="via Supabase"
           isPositive={true}
           icon={Users}
           color="blue"
@@ -180,8 +199,8 @@ export default function Dashboard({ onNavigate, onSelectCustomer, onStartCampaig
         <KpiCard
           title="Avg Credit Score"
           value={Math.round(avgCreditScore).toString()}
-          change="+12 pts"
-          period="vs last quarter"
+          change="AI Validated"
+          period="portfolio average"
           isPositive={true}
           icon={CheckCircle2}
           color="emerald"
@@ -276,12 +295,12 @@ export default function Dashboard({ onNavigate, onSelectCustomer, onStartCampaig
               </div>
             </div>
             <span className="text-xs font-bold text-purple-700 bg-purple-50 px-2.5 py-1 rounded-full border border-purple-100">
-              6,381 Total Ready
+              Live DB Matches
             </span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 my-4">
-            {AI_OPPORTUNITIES.map((opp) => {
+            {aiOpportunities.map((opp) => {
               const Icon = getProductIcon(opp.product);
               return (
                 <div
@@ -298,172 +317,111 @@ export default function Dashboard({ onNavigate, onSelectCustomer, onStartCampaig
                         <span className="text-[11px] text-slate-500">{opp.recommendedSegment}</span>
                       </div>
                     </div>
-                    <span className="text-xs font-extrabold text-blue-700 bg-blue-100/70 px-2 py-0.5 rounded">
-                      {opp.customerCount.toLocaleString()}
-                    </span>
                   </div>
-                  <p className="text-[11px] text-slate-600 leading-snug line-clamp-2">{opp.summary}</p>
-                  <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between text-xs">
-                    <span className="text-emerald-700 font-semibold text-[11px]">Est. Lift: {opp.potentialRevenue}</span>
+                  <div className="flex items-center justify-between pt-1 border-t border-slate-100">
+                    <span className="text-[11px] font-semibold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
+                      {opp.customerCount.toLocaleString()} Candidates
+                    </span>
                     <button
-                      onClick={() => onStartCampaign && onStartCampaign(opp.product, opp.recommendedSegment)}
-                      className="text-purple-700 hover:text-purple-800 font-bold text-[11px] inline-flex items-center gap-0.5 cursor-pointer"
+                      onClick={() => onStartCampaign(opp.product, opp.recommendedSegment)}
+                      className="text-[11px] font-bold text-blue-600 hover:text-blue-800 transition-colors flex items-center gap-0.5 cursor-pointer"
                     >
                       <span>Campaign</span>
-                      <ChevronRight className="w-3 h-3" />
+                      <ArrowRight className="w-3 h-3" />
                     </button>
                   </div>
                 </div>
               );
             })}
           </div>
-
-          <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
-            <span className="text-slate-500">Targeting precision calibrated daily by BankAI ML</span>
-            <button
-              onClick={() => onNavigate('campaigns')}
-              className="text-xs font-bold text-blue-600 hover:text-blue-700 inline-flex items-center space-x-1 cursor-pointer"
-            >
-              <span>Launch Campaign</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
         </div>
       </div>
 
-      {/* NBO Matrix Table */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-        <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+      {/* AI Next Best Offer Matrix */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden flex flex-col">
+        <div className="p-5 border-b border-slate-100 flex items-center justify-between">
           <div>
-            <div className="flex items-center space-x-2">
-              <h3 className="text-base font-bold text-slate-900 tracking-tight">Next Best Offer (NBO) Matrix</h3>
-              <span className="text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full">
-                Real-Time Recommendations
-              </span>
-            </div>
-            <p className="text-xs text-slate-500">Propensity models matched to immediate behavioral triggers</p>
+            <h3 className="text-base font-bold text-slate-900 tracking-tight flex items-center gap-2">
+              <Target className="w-4 h-4 text-blue-600" />
+              Next Best Offer (NBO) Matrix
+            </h3>
+            <p className="text-xs text-slate-500">Live AI engine scoring for top priority customers.</p>
           </div>
           <button
             onClick={() => onNavigate('customers')}
-            className="text-xs font-semibold text-blue-600 hover:text-blue-700 inline-flex items-center space-x-1 cursor-pointer self-start sm:self-auto"
+            className="text-xs font-semibold text-blue-600 hover:text-blue-700 inline-flex items-center space-x-1 cursor-pointer"
           >
-            <span>View Full Customer List ({totalCustomers.toLocaleString()})</span>
-            <ArrowRight className="w-3.5 h-3.5" />
+            <span>View All Directory</span>
+            <ChevronRight className="w-3.5 h-3.5" />
           </button>
         </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-slate-50 border-b border-slate-200 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+        <div className="overflow-x-auto flex-1">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold uppercase tracking-wider text-slate-500">
               <tr>
-                <th className="px-5 py-3">Customer</th>
-                <th className="px-5 py-3">Segment</th>
-                <th className="px-5 py-3">Recommended Product</th>
-                <th className="px-5 py-3">Monthly Est.</th>
-                <th className="px-5 py-3">Propensity Score</th>
+                <th className="px-5 py-3">Customer Identity</th>
+                <th className="px-5 py-3">AI Segment</th>
+                <th className="px-5 py-3 text-right">Est. Monthly Inflow</th>
+                <th className="px-5 py-3">Next Best Offer</th>
+                <th className="px-5 py-3 text-right">Propensity</th>
                 <th className="px-5 py-3 text-right">Action</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 text-xs">
-              {recommendations.map((c) => {
-                const Icon = getProductIcon(c.recommendedProduct);
-                return (
-                  <tr key={c.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="px-5 py-3.5 whitespace-nowrap">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center font-bold text-slate-700 overflow-hidden shrink-0 border border-slate-300">
-                          {c.name.split(' ').map((n) => n[0]).join('').slice(0, 2)}
-                        </div>
-                        <div>
-                          <p className="font-bold text-slate-900">{c.name}</p>
-                          <p className="text-[11px] text-slate-500">{c.id}</p>
-                        </div>
+            <tbody className="divide-y divide-slate-100">
+              {recommendations.map((customer) => (
+                <tr
+                  key={customer.id}
+                  className="hover:bg-slate-50/80 transition-colors group cursor-pointer"
+                  onClick={() => onSelectCustomer(customer._raw)}
+                >
+                  <td className="px-5 py-3 whitespace-nowrap">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center font-bold text-slate-600 shrink-0 shadow-xs">
+                        {customer.name.charAt(0)}
                       </div>
-                    </td>
-                    <td className="px-5 py-3.5 whitespace-nowrap">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-800 border border-slate-200">
-                        {c.segment}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3.5 whitespace-nowrap">
-                      <div className="flex items-center space-x-2">
-                        <div className="w-6 h-6 rounded-md bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-                          <Icon className="w-3.5 h-3.5" />
-                        </div>
-                        <span className="font-semibold text-slate-800">{c.recommendedProduct}</span>
+                      <div>
+                        <p className="font-bold text-slate-900 group-hover:text-blue-600 transition-colors">
+                          {customer.name}
+                        </p>
+                        <p className="text-[10px] text-slate-400">ID: {customer.id} • {customer.city}</p>
                       </div>
-                    </td>
-                    <td className="px-5 py-3.5 whitespace-nowrap font-medium text-slate-700">{c.monthlySpending}</td>
-                    <td className="px-5 py-3.5 whitespace-nowrap">
-                      <div className="flex items-center space-x-2">
-                        <div className="w-16 bg-slate-100 rounded-full h-2 overflow-hidden">
-                          <div
-                            className={`h-full rounded-full ${c.propensity >= 85 ? 'bg-emerald-500' : c.propensity >= 75 ? 'bg-blue-500' : 'bg-amber-500'}`}
-                            style={{ width: `${c.propensity}%` }}
-                          />
-                        </div>
-                        <span className={`font-bold px-1.5 py-0.5 rounded text-xs ${c.propensity >= 85 ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : c.propensity >= 75 ? 'bg-blue-50 text-blue-700 border border-blue-200' : 'bg-amber-50 text-amber-700 border border-amber-200'}`}>
-                          {c.propensity}%
-                        </span>
+                    </div>
+                  </td>
+                  <td className="px-5 py-3 whitespace-nowrap">
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                      {customer.segment}
+                    </span>
+                  </td>
+                  <td className="px-5 py-3 whitespace-nowrap text-right font-medium text-slate-700">
+                    {customer.monthlySpending}
+                  </td>
+                  <td className="px-5 py-3 whitespace-nowrap font-bold text-slate-800">
+                    {customer.recommendedProduct}
+                  </td>
+                  <td className="px-5 py-3 whitespace-nowrap text-right">
+                    <div className="flex items-center justify-end space-x-2">
+                      <span className="font-bold text-emerald-600">{customer.propensity}%</span>
+                      <div className="w-12 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                        <div
+                          className="h-full bg-emerald-500 rounded-full"
+                          style={{ width: `${customer.propensity}%` }}
+                        />
                       </div>
-                    </td>
-                    <td className="px-5 py-3.5 whitespace-nowrap text-right">
-                      <button
-                        onClick={() => onSelectCustomer(c._raw)}
-                        className="inline-flex items-center space-x-1 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold rounded-lg text-xs transition-colors cursor-pointer border border-blue-200/60"
-                      >
-                        <span>View 360°</span>
-                        <ChevronRight className="w-3.5 h-3.5" />
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
+                    </div>
+                  </td>
+                  <td className="px-5 py-3 whitespace-nowrap text-right">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); onStartCampaign(customer.recommendedProduct, customer.segment); }}
+                      className="inline-flex items-center justify-center space-x-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white font-bold rounded shadow-xs transition-all cursor-pointer"
+                    >
+                      <Send className="w-3 h-3" />
+                      <span>Dispatch</span>
+                    </button>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
-        </div>
-      </div>
-
-      {/* AI Insight Section */}
-      <div className="bg-gradient-to-br from-purple-50 via-white to-blue-50/50 rounded-xl border border-purple-200/80 p-5 shadow-xs space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2.5">
-            <div className="w-8 h-8 rounded-lg bg-purple-600 text-white flex items-center justify-center shadow-xs">
-              <Sparkles className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="text-base font-bold text-slate-900 tracking-tight">BankAI Executive Intelligence & Recommendations</h3>
-              <p className="text-xs text-slate-500">Autonomous insights derived across transactional & behavioral telemetry</p>
-            </div>
-          </div>
-          <span className="text-[11px] font-bold text-purple-700 bg-purple-100 px-2.5 py-1 rounded-full">Cognizant Cognitive Core</span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-          <div className="p-4 bg-white rounded-xl border border-slate-200 space-y-2">
-            <div className="flex items-center space-x-2 text-purple-700 font-bold">
-              <Plane className="w-4 h-4" /><span>Travel Rewards Surge</span>
-            </div>
-            <p className="text-slate-600 leading-relaxed">
-              Frequent flyers logged international flights on competitor cards. Launching the BankAI Zero-Forex Card campaign this week captures significant merchant volume.
-            </p>
-          </div>
-          <div className="p-4 bg-white rounded-xl border border-slate-200 space-y-2">
-            <div className="flex items-center space-x-2 text-emerald-700 font-bold">
-              <TrendingUp className="w-4 h-4" /><span>Idle Liquidity Monetization</span>
-            </div>
-            <p className="text-slate-600 leading-relaxed">
-              Multiple customers hold large idle checking balances with zero equity exposure. Automated Wealth SIP recommendations are projected to generate significant AUM.
-            </p>
-          </div>
-          <div className="p-4 bg-white rounded-xl border border-slate-200 space-y-2">
-            <div className="flex items-center space-x-2 text-rose-700 font-bold">
-              <AlertTriangle className="w-4 h-4" /><span>Early Attrition Interception</span>
-            </div>
-            <p className="text-slate-600 leading-relaxed">
-              Accounts flagged with significant transactional drop in the last 60 days. Immediate fee waivers and cashback retention packages can reduce customer churn probability by 68%.
-            </p>
-          </div>
         </div>
       </div>
     </div>

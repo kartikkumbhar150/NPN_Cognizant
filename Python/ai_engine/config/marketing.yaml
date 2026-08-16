@@ -1,0 +1,63 @@
+# ============================================================
+# marketing.yaml
+# Marketing safety gate and consent configuration
+# ============================================================
+
+# ── Channel types ──
+channels:
+  - email
+  - sms
+  - push
+  - app_notification
+  - relationship_manager
+
+# ── Channel consent defaults (when no consent data is available) ──
+# true = assume consent (prototype). Set to false for production.
+consent_defaults:
+  email: true
+  sms: true
+  push: true
+  app_notification: true
+  relationship_manager: true
+
+# ── Channel scoring signals ──
+channel_preference:
+  # If we have no explicit preference, score each by engagement proxy
+  high_digital_ratio_threshold: 0.70  # > 70% digital txns → push/app preferred
+  low_digital_ratio_threshold: 0.30   # < 30% digital → branch/RM preferred
+
+# ── Compliance rules ──
+compliance:
+  # Minimum delay between campaigns for same customer (hours)
+  min_campaign_interval_hours: 24
+  # Maximum campaigns per customer per month
+  max_campaigns_per_month: 8
+  # Products that require additional approval before campaign launch
+  high_risk_products:
+    - Home Loan
+    - Personal Loan
+  # Message must include disclaimer for investment products
+  investment_disclaimer: >
+    Mutual fund investments are subject to market risks. Please read all
+    scheme-related documents carefully before investing.
+    Past performance is not indicative of future returns.
+
+# ── GenAI output constraints ──
+genai_guardrails:
+  # These strings must never appear in generated marketing content
+  forbidden_phrases:
+    - "guaranteed returns"
+    - "risk-free investment"
+    - "100% safe"
+    - "definitely approved"
+    - "instant approval guaranteed"
+    - "your loan is approved"
+  # Maximum word count for customer-facing messages
+  max_short_message_words: 60
+  max_email_words: 200
+  # Tone options available to the system
+  allowed_tones:
+    - professional
+    - warm
+    - concise
+    - urgent

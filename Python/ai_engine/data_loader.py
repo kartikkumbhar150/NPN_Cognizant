@@ -48,3 +48,7 @@ def load_credit_cards():
 def load_loan_products():
     """Loads the loan products catalogue from Supabase."""
     return _load_table('loan_products', 'loan_products.csv')
+
+def load_investment_products():
+    """Loads the investment products catalogue from Supabase."""
+    return _load_table('investment_products', 'investment_products.csv')

@@ -1,173 +1,182 @@
 """
-Next Best Offer (NBO) Engine
-============================
-Gap-aware recommendation engine.
-Consumes FinancialAnalyst output to recommend the single most
-impactful banking product for each customer with specific, data-driven reasons.
+Next Best Offer (NBO) Engine (v2.0)
+===================================
+Banking-Grade Customer Intelligence — NPN Bank AI Pipeline v2.0
+
+Upgrades from v1:
+  - Uses EligibilityEngine to enforce hard constraints.
+  - Uses ProductFitEngine to score behavioral relevance.
+  - Replaces fake `propensity = severity * 8` with a weighted ensemble scorer.
+  - Supports Credit Cards, Loans, and Investments from Supabase.
 """
 
+import logging
+from typing import Any, Dict, List
+import pandas as pd
+import yaml
+import os
+
+from feature_engine import CustomerFeatureSet
+from eligibility_engine import EligibilityEngine
+from product_fit_engine import ProductFitEngine
+
+logger = logging.getLogger(__name__)
+
+# Load config
+CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config", "nbo_weights.yaml")
+try:
+    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+        CONFIG = yaml.safe_load(f)
+except Exception as e:
+    logger.error(f"Could not load nbo_weights.yaml: {e}")
+    CONFIG = {}
+
+WEIGHTS = CONFIG.get("weights", {
+    "propensity": 0.30,
+    "product_fit": 0.25,
+    "event_relevance": 0.20,
+    "customer_need": 0.10,
+    "recency": 0.10,
+    "relationship_value": 0.05
+})
+
+PRODUCT_PRIORITY = CONFIG.get("product_priority", {})
 
 class NBOEngine:
-    def __init__(self, credit_cards, loans):
-        self.credit_cards = credit_cards
-        self.loans        = loans
+    """
+    Determines the Next Best Offer by orchestrating eligibility, fit, and propensity.
+    """
 
-        # Gap code → product category priority mapping
-        self.gap_product_map = {
-            "NO_INVESTMENT":              ["Investment/SIP", "FD"],
-            "HIGH_MEDICAL_NO_INSURANCE":  ["Health Insurance"],
-            "NO_INSURANCE":               ["Health Insurance"],
-            "TRAVELLER_NO_CARD":          ["Travel Card"],
-            "GROWING_INCOME_NO_INVESTMENT": ["Investment/SIP"],
-            "CRITICAL_SAVINGS":           ["FD"],
-            "HIGH_RENT_BURDEN":           ["Home Loan"],
-            "LOW_SAVINGS":                ["Investment/SIP", "FD"],
-            "OVERSPENDING_DINING":        ["Cashback Card"],
-            "OVERSPENDING_SHOPPING":      ["Shopping Rewards Card"],
-            "HIGH_DINING":                ["Cashback Card"],
+    def __init__(self, credit_cards: pd.DataFrame, loans: pd.DataFrame, investments: pd.DataFrame = None):
+        self.eligibility_engine = EligibilityEngine(credit_cards, loans, investments)
+        self.fit_engine = ProductFitEngine()
+        
+        # Keep v1 attributes for backward compatibility
+        self.credit_cards = credit_cards
+        self.loans = loans
+
+    # ── Public API ─────────────────────────────────────────────────────────────
+
+    def determine_next_best_offer(self, features: CustomerFeatureSet, events: List[Dict], financial_gaps: List[Dict], customer_data: Dict) -> Dict[str, Any]:
+        """
+        End-to-end NBO determination.
+        """
+        # 1. Hard Eligibility Gate
+        eligible_products = self.eligibility_engine.get_eligible(features, customer_data)
+        
+        if not eligible_products:
+            return self._empty_nbo()
+
+        # 2. Product Fit Scoring (Behavioral Match)
+        fit_scored_products = self.fit_engine.score_all(eligible_products, features, events, financial_gaps)
+
+        # 3. Final Weighted Ranking
+        ranked_offers = self._rank_offers(fit_scored_products, features, events, financial_gaps)
+
+        if not ranked_offers:
+            return self._empty_nbo()
+            
+        best_offer = ranked_offers[0]
+        
+        # Compatibility with v1 return format
+        return {
+            "category": best_offer.get("product_type", "Unknown"),
+            "specific_product": best_offer.get("product_name"),
+            "propensity": f"{int(best_offer.get('nbo_score', 0) * 100)}%",
+            "reasons": best_offer.get("fit_evidence", ["High overall fit score."]),
+            "gap_code": financial_gaps[0]["code"] if financial_gaps else None,
+            # Pass all enriched data for ExplainabilityEngine
+            "full_result": best_offer,
+            "product_id": best_offer.get("product_id")
         }
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # Propensity (legacy — kept for segmentation compat, now gap-driven)
-    # ─────────────────────────────────────────────────────────────────────────
+    # ── Internal Ranking ───────────────────────────────────────────────────────
+
+    def _rank_offers(self, fit_scored_products: List[Dict], features: CustomerFeatureSet, events: List[Dict], financial_gaps: List[Dict]) -> List[Dict]:
+        """Rank products using the config-driven weighted ensemble."""
+        ranked = []
+        
+        # Calculate max gap severity for normalization
+        max_severity = max([g.get("severity", 0) for g in financial_gaps]) if financial_gaps else 0
+        
+        for product in fit_scored_products:
+            fit_score = product.get("fit_score", 0)
+            
+            # Baseline Propensity (placeholder for a real ML model, currently uses fit as proxy)
+            propensity = fit_score * 0.8 + 0.1
+            
+            # Event Relevance
+            event_relevance = 0
+            for event in events:
+                # If product tag matches event tag (simplified check since fit_engine already did tag matching)
+                if len(product.get("matched_features", [])) > 0:
+                    event_relevance = max(event_relevance, event.get("confidence", 0) * event.get("severity_score", 0))
+                    
+            # Customer Need (Gap Severity)
+            customer_need = 0
+            if max_severity > 0 and len(product.get("matched_features", [])) > 0:
+                customer_need = max_severity / 10.0
+                
+            # Recency
+            recency_score = 0.5
+            if events:
+                # Recent event boost
+                recency_score = 0.8
+                
+            # Relationship Value
+            relationship_val = min(1.0, (features.monthly_income_avg * 12) / 2000000.0)
+            
+            # Compute Final Score
+            nbo_score = (
+                (propensity * WEIGHTS.get("propensity", 0.30)) +
+                (fit_score * WEIGHTS.get("product_fit", 0.25)) +
+                (event_relevance * WEIGHTS.get("event_relevance", 0.20)) +
+                (customer_need * WEIGHTS.get("customer_need", 0.10)) +
+                (recency_score * WEIGHTS.get("recency", 0.10)) +
+                (relationship_val * WEIGHTS.get("relationship_value", 0.05))
+            )
+            
+            # Add Product Priority Boost
+            category_mapping = {
+                "credit_card": "Credit Card",
+                "loan": "Personal Loan",
+                "investment": "Investment/SIP"
+            }
+            mapped_cat = category_mapping.get(product.get("product_type"))
+            nbo_score += PRODUCT_PRIORITY.get(mapped_cat, 0)
+            
+            ranked.append({
+                **product,
+                "propensity_score": round(propensity, 3),
+                "nbo_score": round(min(1.0, max(0.0, nbo_score)), 3)
+            })
+            
+        return sorted(ranked, key=lambda x: x["nbo_score"], reverse=True)
+
+    # ── Fallback ───────────────────────────────────────────────────────────────
+
+    def _empty_nbo(self):
+        return {
+            "category": "Standard Account",
+            "specific_product": "Standard Savings Account",
+            "propensity": "10%",
+            "reasons": ["No specific eligible product found."],
+            "gap_code": None,
+            "full_result": {},
+            "product_id": None
+        }
+
+    # ── Backward Compatibility (v1) ────────────────────────────────────────────
 
     def calculate_propensity(self, customer_data, segments, events, financial_gaps=None):
-        """
-        Calculate product propensity scores.
-        When financial_gaps are provided, they drive the scores directly.
-        Falls back to heuristic when no gaps are available.
-        """
+        """Deprecated: Kept only for API backward compatibility if needed."""
         propensities = {
-            "Travel Card":      10,
-            "Investment/SIP":   10,
-            "Personal Loan":    5,
-            "Health Insurance": 5,
-            "FD":               10,
-            "Home Loan":        5,
-            "Cashback Card":    5,
+            "Travel Card": 10, "Investment/SIP": 10, "Personal Loan": 5,
+            "Health Insurance": 5, "FD": 10, "Home Loan": 5, "Cashback Card": 5
         }
-
         if financial_gaps:
-            # Severity directly boosts propensity
             for gap in financial_gaps:
                 boost = gap["severity"] * 8
                 for product_cat in gap.get("products", []):
-                    if product_cat in propensities:
-                        propensities[product_cat] = min(99, propensities[product_cat] + boost)
-                    else:
-                        # Add new product category if not in default list
-                        propensities[product_cat] = min(99, boost)
-        else:
-            # Legacy heuristic fallback
-            if "Frequent Traveller" in segments:
-                propensities["Travel Card"] += 35
-            if "Investment Prospect" in segments:
-                propensities["Investment/SIP"] += 60
-            if "Loan Prospect" in segments:
-                propensities["Personal Loan"] += 40
-            if "High-Value Customer" in segments:
-                propensities["FD"] += 50
-            if "Flight/Travel Purchase" in events:
-                propensities["Travel Card"] += 50
-
-        # Cap at 99
-        for k in propensities:
-            propensities[k] = min(propensities[k], 99)
-
+                    propensities[product_cat] = min(99, propensities.get(product_cat, 0) + boost)
         return dict(sorted(propensities.items(), key=lambda item: item[1], reverse=True))
-
-    # ─────────────────────────────────────────────────────────────────────────
-    # Next Best Offer — gap-driven
-    # ─────────────────────────────────────────────────────────────────────────
-
-    def determine_next_best_offer(self, propensities, customer_data, events,
-                                  existing_products=None, financial_gaps=None,
-                                  financial_analysis=None):
-        """
-        Pick the single best offer for this customer.
-        If financial_gaps are available, uses the highest-severity gap.
-        Falls back to top propensity otherwise.
-        """
-        income = customer_data.get("annual_income", 0)
-
-        # ── Gap-driven path ─────────────────────────────────────────────────
-        if financial_gaps:
-            top_gap    = financial_gaps[0]  # already sorted by severity desc
-            product_cat = top_gap["products"][0]
-            reasons    = [top_gap["insight"]]
-
-            # Add any secondary gap insights (max 2 extras)
-            for extra_gap in financial_gaps[1:3]:
-                reasons.append(extra_gap["insight"])
-
-            specific_product = self._resolve_product(product_cat, income)
-
-            return {
-                "category":        product_cat,
-                "specific_product": specific_product,
-                "propensity":      f"{propensities.get(product_cat, propensities.get(financial_gaps[0]['products'][0], 50))}%",
-                "reasons":         reasons,
-                "gap_code":        top_gap["code"],
-            }
-
-        # ── Legacy fallback path ─────────────────────────────────────────────
-        best_category = list(propensities.keys())[0]
-        score         = propensities[best_category]
-        specific_product = self._resolve_product(best_category, income)
-        reasons = [f"High propensity score for {best_category}."]
-
-        if "Flight/Travel Purchase" in events:
-            reasons.append("Recent flight/travel purchase detected.")
-        if "Large Purchase" in events:
-            reasons.append("Recent large purchase detected.")
-
-        return {
-            "category":        best_category,
-            "specific_product": specific_product,
-            "propensity":      f"{score}%",
-            "reasons":         reasons,
-            "gap_code":        None,
-        }
-
-    # ─────────────────────────────────────────────────────────────────────────
-    # Product Resolver — maps category → specific product from catalogue
-    # ─────────────────────────────────────────────────────────────────────────
-
-    def _resolve_product(self, product_category, income):
-        """Find the best specific product from the catalogue for a category and income."""
-
-        if product_category == "Travel Card":
-            travel_cards = self.credit_cards[self.credit_cards["tag_travel"] == 1]
-            if not travel_cards.empty:
-                eligible = travel_cards[travel_cards["minimum_income_annual"] <= income]
-                if not eligible.empty:
-                    return eligible.sort_values("minimum_income_annual", ascending=False).iloc[0]["card_name"]
-                return travel_cards.iloc[0]["card_name"]
-
-        elif product_category in ("Cashback Card", "Shopping Rewards Card"):
-            if "tag_cashback" in self.credit_cards.columns:
-                cards = self.credit_cards[self.credit_cards["tag_cashback"] == 1]
-            else:
-                cards = self.credit_cards
-            if not cards.empty:
-                eligible = cards[cards["minimum_income_annual"] <= income]
-                if not eligible.empty:
-                    return eligible.iloc[0]["card_name"]
-                return cards.iloc[0]["card_name"]
-
-        elif product_category == "Home Loan":
-            home_loans = self.loans[self.loans["product_name"].str.contains("Home", case=False, na=False)]
-            if not home_loans.empty:
-                return home_loans.iloc[0]["product_name"]
-            return "Home Loan"
-
-        elif product_category == "Health Insurance":
-            return "Health & Life Insurance Plan"
-
-        elif product_category == "Investment/SIP":
-            return "Mutual Fund SIP"
-
-        elif product_category == "FD":
-            return "Fixed Deposit (FD)"
-
-        return f"{product_category} Product"

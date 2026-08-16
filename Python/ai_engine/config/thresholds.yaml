@@ -1,0 +1,84 @@
+# ============================================================
+# thresholds.yaml
+# All numeric thresholds for the NPN Bank AI Pipeline.
+# Edit here — NEVER hard-code these in Python source files.
+# ============================================================
+
+# ── Spending category thresholds (as % of monthly income) ──
+spending:
+  dining_pct_warn: 0.12       # > 12% → elevated dining
+  dining_pct_bad: 0.18        # > 18% → overspending
+  shopping_pct_warn: 0.15     # > 15% → elevated shopping
+  shopping_pct_bad: 0.22      # > 22% → overspending
+  rent_pct_warn: 0.30         # > 30% → high rent burden
+  rent_pct_bad: 0.40          # > 40% → very high rent burden
+  travel_pct_traveller: 0.12  # > 12% of total spend → frequent traveller
+  fuel_pct_high: 0.08         # > 8% → high fuel spend
+  ecommerce_pct_high: 0.18    # > 18% → heavy e-commerce user
+
+# ── Savings rate benchmarks ──
+savings:
+  critical: 0.08   # < 8% → critical low savings
+  low: 0.20        # < 20% → below average
+  healthy: 0.30    # >= 30% → healthy
+
+# ── Investment benchmarks ──
+investment:
+  income_threshold_annual: 600000   # >= ₹6L/yr → expect some investment
+  min_invest_ratio: 0.05            # >= 5% of income → adequate investment
+  high_surplus_invest_threshold: 0.25  # > 25% surplus and no investment = strong gap
+
+# ── Medical / insurance ──
+medical:
+  high_spend_absolute: 20000  # > ₹20K total → high medical spend
+  very_high_spend_absolute: 50000  # > ₹50K → very high
+
+# ── Event detection (relative thresholds) ──
+events:
+  large_purchase_percentile: 0.90  # Top 10% of customer's own transactions
+  large_purchase_abs_min: 15000    # Absolute floor even for high spenders
+  travel_transaction_min: 1000     # Min amount for a travel event signal
+  travel_monthly_min_count: 2      # >= 2 travel txns/month → frequent traveller
+  international_signal_amount: 5000  # > ₹5K in international context
+  salary_increase_pct: 0.10        # >= 10% month-over-month increase
+  salary_decrease_pct: 0.10        # >= 10% month-over-month decrease
+  spending_spike_pct: 0.40         # 40% above own 90d baseline = spike
+  investment_first_min: 500        # Any investment >= ₹500
+
+# ── Rolling window periods (days) ──
+windows:
+  short: 7
+  medium: 30
+  standard: 60
+  quarter: 90
+  half_year: 180
+  annual: 365
+
+# ── Customer lifecycle ──
+lifecycle:
+  new_customer_days: 90         # Tenure < 90 days
+  growing_customer_days: 365    # Tenure 90–365 days
+  established_customer_days: 1095  # Tenure 1–3 years
+  high_value_income_threshold: 1500000  # Annual income >= ₹15L
+  dormant_no_tx_days: 60        # No transactions for 60 days
+  at_risk_decline_pct: 0.40     # 40% drop in transaction volume
+  min_products_for_deep: 2      # Min products for "established" classification
+
+# ── Propensity scoring bounds ──
+propensity:
+  min_score: 0.05      # Floor for any eligible product
+  max_score: 0.95      # Ceiling (never claim 100%)
+  feature_weight: 0.40        # Weight for feature-based score
+  cluster_weight: 0.35        # Weight for cluster propensity
+  event_boost_weight: 0.25    # Weight for event signal boost
+
+# ── Financial health score ──
+health_score:
+  savings_max: 30
+  investment_max: 25
+  insurance_max: 20
+  spending_discipline_max: 25
+  grade_excellent: 80
+  grade_good: 65
+  grade_attention: 45
+  grade_poor: 25

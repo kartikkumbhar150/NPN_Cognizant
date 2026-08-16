@@ -16,6 +16,7 @@ import json
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
+import math
 
 # ── Path setup so ai_engine modules resolve ──────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -34,12 +35,16 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(BASE_DIR, ".env"))
 
 # ── AI Engine imports ─────────────────────────────────────────────────────────
-from data_loader import load_customers, load_transactions, load_credit_cards, load_loan_products
+from data_loader import load_customers, load_transactions, load_credit_cards, load_loan_products, load_investment_products
+from feature_engine import FeatureEngine
 from behavior_engine import BehaviorEngine
+from event_engine import EventEngine
 from segmentation import SegmentationEngine
 from nbo_engine import NBOEngine
 from genai_service import GenAIService
 from financial_analyst import FinancialAnalyst
+from explainability_engine import ExplainabilityEngine
+from marketing_guard import MarketingGuard
 
 # ── App setup ─────────────────────────────────────────────────────────────────
 app = FastAPI(
@@ -95,19 +100,27 @@ _data_cache = {}
 def get_engines():
     """Lazily load data and initialise engines (cached after first call)."""
     if not _data_cache:
-        print("Loading data and initialising AI engines...")
+        print("Loading data and initialising AI engines v2...")
         customers_df    = load_customers()
         transactions_df = load_transactions()
         credit_cards_df = load_credit_cards()
         loans_df        = load_loan_products()
+        investments_df  = load_investment_products()
 
         _data_cache["customers_df"]    = customers_df
         _data_cache["transactions_df"] = transactions_df
+        
+        # v2 Engines
+        _data_cache["feature_engine"]    = FeatureEngine(transactions_df)
         _data_cache["behavior_engine"]   = BehaviorEngine(transactions_df)
+        _data_cache["event_engine"]      = EventEngine(transactions_df)
         _data_cache["seg_engine"]        = SegmentationEngine()
-        _data_cache["financial_analyst"] = FinancialAnalyst(transactions_df)
-        _data_cache["nbo_engine"]        = NBOEngine(credit_cards_df, loans_df)
+        _data_cache["financial_analyst"] = FinancialAnalyst()
+        _data_cache["nbo_engine"]        = NBOEngine(credit_cards_df, loans_df, investments_df)
+        _data_cache["explain_engine"]    = ExplainabilityEngine()
+        _data_cache["marketing_guard"]   = MarketingGuard()
         _data_cache["genai_service"]     = GenAIService()
+        
         print("Engines ready.")
     return _data_cache
 
@@ -215,46 +228,35 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
 @app.get("/api/dashboard/stats", tags=["Dashboard"])
 def get_dashboard_stats(current_employee=Depends(get_current_employee)):
     """
-    Returns aggregate statistics for the dashboard:
-    - total customers
-    - segment distribution
-    - income tier distribution
-    - campaigns count
+    Returns aggregate statistics for the dashboard.
     """
     eng = get_engines()
     customers_df = eng["customers_df"]
     seg_engine   = eng["seg_engine"]
-    behavior_engine = eng["behavior_engine"]
+    feature_engine = eng["feature_engine"]
 
     total_customers = len(customers_df)
 
-    # Income distribution buckets
     def income_bucket(income):
-        if income < 500000:
-            return "< ₹5L"
-        elif income < 1000000:
-            return "₹5L–₹10L"
-        elif income < 2000000:
-            return "₹10L–₹20L"
-        else:
-            return "> ₹20L"
+        if income < 500000: return "< ₹5L"
+        elif income < 1000000: return "₹5L–₹10L"
+        elif income < 2000000: return "₹10L–₹20L"
+        else: return "> ₹20L"
 
     income_dist = {}
     for _, row in customers_df.iterrows():
         bucket = income_bucket(row.get("annual_income", 0))
         income_dist[bucket] = income_dist.get(bucket, 0) + 1
 
-    # Segment distribution (sample first 200 customers for speed)
     sample = customers_df.head(200)
     segment_dist = {}
     for _, row in sample.iterrows():
         cust_data = row.to_dict()
-        behavior  = behavior_engine.analyze_behavior(row["customer_id"])
-        segs      = seg_engine.segment_customer(cust_data, behavior)
+        features = feature_engine.compute(row["customer_id"], cust_data)
+        segs = seg_engine.segment_customer(cust_data, features)
         for s in segs:
             segment_dist[s] = segment_dist.get(s, 0) + 1
 
-    # Credit score distribution
     credit_avg = round(float(customers_df["credit_score"].mean()), 0) if "credit_score" in customers_df.columns else 0
 
     return {
@@ -289,7 +291,6 @@ def list_customers(
     available_cols = [c for c in cols if c in customers_df.columns]
     df = customers_df[available_cols].copy()
 
-    # Search filter
     if search:
         q = search.lower()
         mask = (
@@ -314,16 +315,19 @@ def analyze_customer(
     current_employee=Depends(get_current_employee),
 ):
     """
-    Run the full AI pipeline for a single customer.
-    Returns: behavior, segments, financial analysis, propensities, NBO, GenAI message.
+    Run the full AI pipeline v2 for a single customer.
     """
     eng = get_engines()
-    customers_df    = eng["customers_df"]
-    behavior_engine = eng["behavior_engine"]
-    seg_engine      = eng["seg_engine"]
+    customers_df      = eng["customers_df"]
+    feature_engine    = eng["feature_engine"]
+    behavior_engine   = eng["behavior_engine"]
+    event_engine      = eng["event_engine"]
     financial_analyst = eng["financial_analyst"]
-    nbo_engine      = eng["nbo_engine"]
-    genai_service   = eng["genai_service"]
+    seg_engine        = eng["seg_engine"]
+    nbo_engine        = eng["nbo_engine"]
+    explain_engine    = eng["explain_engine"]
+    marketing_guard   = eng["marketing_guard"]
+    genai_service     = eng["genai_service"]
 
     customer_row = customers_df[customers_df["customer_id"] == customer_id]
     if customer_row.empty:
@@ -331,37 +335,72 @@ def analyze_customer(
 
     customer_data = customer_row.iloc[0].to_dict()
 
-    # Run full pipeline
-    behavior           = behavior_engine.analyze_behavior(customer_id)
-    events             = behavior_engine.detect_events(customer_id)
-    segments           = seg_engine.segment_customer(customer_data, behavior)
-    financial_analysis = financial_analyst.analyse(customer_id, customer_data, behavior)
+    # 1. Features
+    features = feature_engine.compute(customer_id, customer_data)
+
+    # 2. Behavior & Events
+    behavior = behavior_engine.analyze_behavior_v2(customer_id, features)
+    events   = event_engine.detect_events(customer_id, features)
+
+    # 3. Financial Analysis
+    financial_analysis = financial_analyst.analyse(customer_id, customer_data, features)
     financial_gaps     = financial_analysis.get("gaps", [])
 
-    propensities = nbo_engine.calculate_propensity(
-        customer_data, segments, events, financial_gaps=financial_gaps
-    )
+    # 4. Segments
+    segments = seg_engine.segment_customer(customer_data, features)
+
+    # 5. NBO
     nbo = nbo_engine.determine_next_best_offer(
-        propensities, customer_data, events,
+        features=features,
+        events=events,
         financial_gaps=financial_gaps,
-        financial_analysis=financial_analysis,
-    )
-    genai_msg = genai_service.generate_marketing_message(
-        customer_data, nbo, financial_analysis=financial_analysis
+        customer_data=customer_data
     )
 
-    # Serialise (convert numpy types and handle NaNs)
-    import math
+    # 6. Explainability
+    explanation = explain_engine.explain(
+        nbo_candidate=nbo.get("full_result", {}),
+        features=features,
+        events=events,
+        financial_gaps=financial_gaps,
+        customer_data=customer_data
+    )
+
+    # 7. Marketing Guard
+    marketing_check = marketing_guard.check(
+        customer_data=customer_data,
+        product_result=nbo.get("full_result", {}),
+        campaign_history=[]
+    )
+
+    # 8. GenAI
+    genai_msg = ""
+    if marketing_check.get("allowed"):
+        channel = marketing_check.get("recommended_channel", "email")
+        genai_msg = genai_service.generate_marketing_message(
+            customer_data=customer_data,
+            nbo_result=nbo,
+            explanation=explanation,
+            channel=channel
+        )
+        # GenAI Service returns a strict JSON-like string block. We can just return it as a string for now,
+        # but since we instructed it to return JSON, we should extract the body for the frontend.
+        try:
+            # We already parsed JSON in genai_service and returned formatted text
+            pass
+        except Exception:
+            pass
+
     def serialise(obj):
         if isinstance(obj, float):
-            if math.isnan(obj) or math.isinf(obj):
-                return None
+            if math.isnan(obj) or math.isinf(obj): return None
             return obj
-        if hasattr(obj, "item"):   # numpy scalar
+        if hasattr(obj, "item"):
             val = obj.item()
-            if isinstance(val, float) and (math.isnan(val) or math.isinf(val)):
-                return None
+            if isinstance(val, float) and (math.isnan(val) or math.isinf(val)): return None
             return val
+        if hasattr(obj, "__dict__"): # handle CustomerFeatureSet
+            return serialise(obj.__dict__)
         if isinstance(obj, dict):
             return {k: serialise(v) for k, v in obj.items()}
         if isinstance(obj, list):
@@ -374,8 +413,9 @@ def analyze_customer(
         "events": events,
         "segments": segments,
         "financial_analysis": financial_analysis,
-        "propensities": propensities,
         "nbo": nbo,
+        "explanation": explanation,
+        "marketing_check": marketing_check,
         "genai_message": genai_msg,
     })
 
@@ -431,12 +471,11 @@ def update_campaign_status(
 # Segments endpoint
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# Segment definitions (aligned with frontend display names)
 SEGMENT_DEFINITIONS = [
     {
         "id": "seg-1",
         "name": "High Value",
-        "engine_names": ["High-Value Customer", "Premium Customer"],
+        "engine_names": ["High-Value Customer", "Mass Affluent Customer"],
         "recommendedProduct": "Premium Account",
         "aiOpportunity": "Eligible for Wealth Tier upgrades",
         "color": "#2563EB",
@@ -480,45 +519,32 @@ SEGMENT_DEFINITIONS = [
     },
 ]
 
-
 @app.get("/api/segments", tags=["Segments"])
 def get_segments(current_employee=Depends(get_current_employee)):
-    """
-    Returns behavioral segment definitions with live counts computed from
-    customer data (samples first 500 customers for performance).
-    """
     eng = get_engines()
     customers_df    = eng["customers_df"]
-    behavior_engine = eng["behavior_engine"]
+    feature_engine  = eng["feature_engine"]
     seg_engine      = eng["seg_engine"]
 
-    import math
-
-    # Sample customers for fast counting
     sample = customers_df.head(500)
     total_sampled = len(sample)
     total_customers = len(customers_df)
 
-    # Count customers per segment using the engine
     seg_counts: dict = {s["name"]: 0 for s in SEGMENT_DEFINITIONS}
     seg_income_sum:  dict = {s["name"]: 0.0 for s in SEGMENT_DEFINITIONS}
     seg_spend_sum:   dict = {s["name"]: 0.0 for s in SEGMENT_DEFINITIONS}
 
     for _, row in sample.iterrows():
         cust_data = row.to_dict()
-        behavior  = behavior_engine.analyze_behavior(row["customer_id"])
-        engine_segs = seg_engine.segment_customer(cust_data, behavior)
+        features = feature_engine.compute(row["customer_id"], cust_data)
+        engine_segs = seg_engine.segment_customer(cust_data, features)
 
         matched = False
         for seg_def in SEGMENT_DEFINITIONS:
             if any(es in engine_segs for es in seg_def["engine_names"]):
                 seg_counts[seg_def["name"]] += 1
-                income = row.get("annual_income", 0)
-                spend  = behavior.get("total_spend", 0)
-                if isinstance(income, float) and (math.isnan(income) or math.isinf(income)):
-                    income = 0
-                if isinstance(spend, float) and (math.isnan(spend) or math.isinf(spend)):
-                    spend = 0
+                income = features.monthly_income_avg * 12
+                spend  = features.monthly_spend_avg_90d * 12
                 seg_income_sum[seg_def["name"]] += float(income)
                 seg_spend_sum[seg_def["name"]]  += float(spend)
                 matched = True
@@ -526,15 +552,12 @@ def get_segments(current_employee=Depends(get_current_employee)):
         if not matched:
             seg_counts["Churn Risk"] += 1
 
-    # Scale counts from sample to full population
     scale = total_customers / total_sampled if total_sampled > 0 else 1
 
     result = []
     for seg_def in SEGMENT_DEFINITIONS:
         count = int(seg_counts[seg_def["name"]] * scale)
-        raw_avg_spend = (
-            seg_spend_sum[seg_def["name"]] / max(seg_counts[seg_def["name"]], 1)
-        ) / 12  # annual → monthly
+        raw_avg_spend = (seg_spend_sum[seg_def["name"]] / max(seg_counts[seg_def["name"]], 1)) / 12
         avg_spend_monthly = round(raw_avg_spend, 0)
         percentage = round(count / total_customers * 100, 1) if total_customers > 0 else 0
 
@@ -560,17 +583,9 @@ def get_segments(current_employee=Depends(get_current_employee)):
 
 @app.get("/api/analytics", tags=["Analytics"])
 def get_analytics(current_employee=Depends(get_current_employee)):
-    """
-    Returns marketing analytics data:
-    - Conversion funnel stages
-    - Monthly campaign performance trends
-    - Segment conversion rates
-    - Product performance table
-    """
     total_campaigns = len(CAMPAIGNS)
     total_customers_reached = total_campaigns * 420 if total_campaigns > 0 else 8120
 
-    # Conversion funnel (estimated from campaigns launched)
     funnel = [
         {"stage": "Audience",     "count": total_customers_reached,                "percentage": "100%",  "fill": "#3b82f6"},
         {"stage": "Delivered",    "count": int(total_customers_reached * 0.983),    "percentage": "98.3%", "fill": "#6366f1"},
@@ -580,7 +595,6 @@ def get_analytics(current_employee=Depends(get_current_employee)):
         {"stage": "Converted",    "count": int(total_customers_reached * 0.0268),   "percentage": "2.68%", "fill": "#10b981"},
     ]
 
-    # Monthly campaign performance (last 8 months - derived from CAMPAIGNS list)
     from datetime import datetime, timedelta
     now = datetime.now()
     monthly_perf = []
@@ -595,7 +609,6 @@ def get_analytics(current_employee=Depends(get_current_employee)):
             "converted": int(base_sent * (0.024 + i * 0.003)),
         })
 
-    # Segment conversion rates
     segment_conversion = [
         {"segment": "High Value",           "rate": 4.2,  "target": 3.5},
         {"segment": "Freq. Travellers",     "rate": 5.8,  "target": 4.0},
@@ -604,7 +617,6 @@ def get_analytics(current_employee=Depends(get_current_employee)):
         {"segment": "Churn Risk",           "rate": 2.1,  "target": 2.5},
     ]
 
-    # Product performance
     product_performance = [
         {"product": "Travel Credit Card", "offersSent": 2431, "conversions": 141, "conversionRate": 5.8,  "revenueLift": "₹2.84Cr"},
         {"product": "SIP / Mutual Fund",  "offersSent": 1240, "conversions":  61, "conversionRate": 4.9,  "revenueLift": "₹36.4Cr AUM"},
@@ -636,14 +648,9 @@ def generate_campaign_content(
     req: CampaignGenerateContent,
     current_employee=Depends(get_current_employee),
 ):
-    """
-    Uses the GenAI service to generate personalized campaign content
-    (subject line, body, CTA) for a given product + segment combination.
-    """
     eng = get_engines()
     genai_service = eng["genai_service"]
 
-    # Build a synthetic customer_data and nbo_result for the LLM prompt
     segment_context = {
         "High Value":           {"income": 2500000, "first_name": f"{req.segment} Customer"},
         "Frequent Travellers":  {"income": 1200000, "first_name": f"{req.segment} Customer"},
@@ -661,14 +668,16 @@ def generate_campaign_content(
 
     nbo_result = {
         "specific_product": req.product,
-        "reasons": [
+    }
+    
+    explanation = {
+        "customer_reasons": [
             f"Customers in the {req.segment} segment show high propensity for {req.product}.",
-            f"Tone: {req.tone or 'Professional'}.",
-        ],
-        "gap_code": "",
+            f"Tone: {req.tone or 'Professional'}."
+        ]
     }
 
-    raw_message = genai_service.generate_marketing_message(customer_data, nbo_result)
+    raw_message = genai_service.generate_marketing_message(customer_data, nbo_result, explanation)
 
     # Parse subject, body, CTA from the returned text
     lines = raw_message.strip().split("\n")

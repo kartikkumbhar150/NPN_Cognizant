@@ -1,0 +1,43 @@
+# ============================================================
+# nbo_weights.yaml
+# NBO final ranking score weights.
+# Sum of weights (excluding penalty) should = 1.0
+# ============================================================
+
+# ── Component weights for NBO score ──
+weights:
+  propensity: 0.30         # Ensemble propensity model score
+  product_fit: 0.25        # Behavioral tag matching score
+  event_relevance: 0.20    # Recency-weighted event strength
+  customer_need: 0.10      # Financial gap severity
+  recency: 0.10            # Transaction recency signal
+  relationship_value: 0.05 # Customer tenure + income tier
+
+# ── Penalties (subtracted from final score) ──
+penalties:
+  campaign_fatigue: 0.10   # Per recent ignored campaign
+  same_product_repeat: 0.15 # Same product offered in 7 days
+  opt_out: 1.00            # Hard block — always overrides score
+
+# ── Campaign fatigue rules ──
+fatigue:
+  window_days: 30           # Look back 30 days for fatigue
+  max_campaigns_per_window: 5  # Max 5 campaigns in 30 days
+  same_category_days: 7     # Same category cooldown period
+  ignored_threshold: 3      # After 3 ignores → reduce score 30%
+
+# ── Minimum thresholds for recommendation ──
+thresholds:
+  min_nbo_score: 0.15      # Below this → no recommendation generated
+  min_fit_score: 0.10      # Product fit floor
+  min_propensity: 0.05     # Propensity floor
+
+# ── Product priority boost (bank business priority) ──
+# Values are additive to final score. Max 0.05 to avoid overriding suitability.
+product_priority:
+  Travel Card: 0.02
+  Investment/SIP: 0.03
+  Health Insurance: 0.04  # Higher social benefit
+  Personal Loan: 0.01
+  FD: 0.02
+  Credit Card: 0.01
