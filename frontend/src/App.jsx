@@ -1,22 +1,28 @@
 import React, { useState } from 'react';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
+import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Customers from './pages/Customers';
 import Customer360 from './pages/Customer360';
 import Segments from './pages/Segments';
 import Campaigns from './pages/Campaigns';
 import Analytics from './pages/Analytics';
-import { CUSTOMERS_LIST } from './data/mockData';
 import './App.css';
 
-export default function App() {
+function AppShell() {
+  const { isAuthenticated } = useAuth();
   const [currentTab, setCurrentTab] = useState('dashboard');
-  const [selectedCustomer, setSelectedCustomer] = useState(CUSTOMERS_LIST[0]); // default to Rahul Sharma
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [preselectedSegment, setPreselectedSegment] = useState('ALL');
   const [campaignProduct, setCampaignProduct] = useState('Travel Credit Card');
   const [campaignSegment, setCampaignSegment] = useState('Frequent Travellers');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+
+  if (!isAuthenticated) {
+    return <Login />;
+  }
 
   // Navigate to customer 360 page
   const handleSelectCustomer = (customer) => {
@@ -115,5 +121,13 @@ export default function App() {
         </main>
       </div>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppShell />
+    </AuthProvider>
   );
 }

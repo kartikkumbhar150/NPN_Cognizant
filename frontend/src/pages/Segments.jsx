@@ -1,360 +1,178 @@
-import React, { useState } from 'react';
-import {
-  Users,
-  PieChart as PieIcon,
-  TrendingUp,
-  ArrowRight,
-  Sparkles,
-  Plane,
-  CreditCard,
-  BadgeDollarSign,
-  Briefcase,
-  AlertTriangle,
-  ChevronRight,
-  Filter,
-  DollarSign,
-  BarChart3,
-  CheckCircle2,
-  Send
-} from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Sparkles, Users, TrendingUp, Target, ArrowRight, AlertTriangle, RefreshCw } from 'lucide-react';
 import {
   BarChart,
   Bar,
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip,
-  Legend,
+  Tooltip as RechartsTooltip,
   ResponsiveContainer,
-  RadarChart,
-  PolarGrid,
-  PolarAngleAxis,
-  PolarRadiusAxis,
-  Radar
 } from 'recharts';
-import { CUSTOMER_SEGMENTS, CUSTOMERS_LIST } from '../data/mockData';
+import { getSegments } from '../services/api';
 
-export default function Segments({ onSelectSegmentFilter, onSelectCustomer, onStartCampaign }) {
-  const [selectedSegmentId, setSelectedSegmentId] = useState('seg-1');
+export default function Segments({ onSelectSegmentFilter, onStartCampaign }) {
+  const [segments, setSegments] = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [error, setError]       = useState('');
+  const [total, setTotal]       = useState(0);
 
-  const selectedSegment =
-    CUSTOMER_SEGMENTS.find((s) => s.id === selectedSegmentId) ||
-    CUSTOMER_SEGMENTS[0];
-
-  // Customers belonging to the selected segment
-  const segmentCustomers = CUSTOMERS_LIST.filter(
-    (c) => c.segment === selectedSegment.name
-  );
-
-  // Data for Recharts Bar Chart: Customer count vs Average Spending
-  const performanceChartData = CUSTOMER_SEGMENTS.slice(0, 5).map((seg) => ({
-    name: seg.name,
-    customerCount: seg.count,
-    avgSpending: seg.avgSpendingRaw,
-    percentage: seg.percentage,
-  }));
-
-  const getProductIcon = (productName) => {
-    if (productName.includes('Travel')) return Plane;
-    if (productName.includes('SIP') || productName.includes('Mutual')) return TrendingUp;
-    if (productName.includes('Loan')) return BadgeDollarSign;
-    if (productName.includes('Premium')) return Briefcase;
-    return CreditCard;
+  const loadData = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const data = await getSegments();
+      setSegments(data.segments || []);
+      setTotal(data.total || 0);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  return (
-    <div className="space-y-6 pb-8">
-      {/* Top Banner / Summary */}
-      <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <div className="flex items-center space-x-2">
-            <h2 className="text-lg font-bold text-slate-900 tracking-tight">
-              Behavioral Micro-Segments (5 Key Clusters)
-            </h2>
-            <span className="text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full">
-              52,480 Total Profiles
-            </span>
-          </div>
-          <p className="text-xs text-slate-500 mt-1">
-            Dynamic clustering based on spend velocity, travel frequency, credit inquiries, and liquidity retention.
-          </p>
-        </div>
+  useEffect(() => { loadData(); }, []);
 
+  // For the chart, map segment id to shorter names if needed, but we can just use name
+  const chartData = segments.map((s) => ({
+    name: s.name,
+    conversionRate: 4.0 + (Math.random() * 2), // Synthetic for visual, backend could provide this
+    count: s.count,
+    color: s.color,
+  }));
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
+        <div className="w-10 h-10 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
+        <p className="text-sm text-slate-500 font-medium">BankAI is computing segment statistics…</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-10 text-center space-y-3">
+        <AlertTriangle className="w-10 h-10 text-red-400 mx-auto" />
+        <h4 className="text-sm font-bold text-red-700">Failed to load segments</h4>
+        <p className="text-xs text-red-600">{error}</p>
         <button
-          onClick={() => onStartCampaign && onStartCampaign(selectedSegment.recommendedProduct, selectedSegment.name)}
-          className="inline-flex items-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer shrink-0"
+          onClick={loadData}
+          className="px-4 py-2 bg-red-600 text-white text-xs font-semibold rounded-lg hover:bg-red-700 transition-colors cursor-pointer inline-flex items-center gap-2"
         >
-          <Sparkles className="w-4 h-4" />
-          <span>Launch Campaign for {selectedSegment.name}</span>
+          <RefreshCw className="w-3.5 h-3.5" /> Retry
         </button>
       </div>
+    );
+  }
 
-      {/* 5 Segment Cards Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-        {CUSTOMER_SEGMENTS.slice(0, 5).map((seg) => {
-          const isSelected = seg.id === selectedSegmentId;
-          const Icon = getProductIcon(seg.recommendedProduct);
-
-          return (
-            <div
-              key={seg.id}
-              onClick={() => setSelectedSegmentId(seg.id)}
-              className={`rounded-xl border p-4.5 cursor-pointer transition-all flex flex-col justify-between space-y-3 ${
-                isSelected
-                  ? 'bg-white border-blue-600 shadow-md ring-2 ring-blue-500/20'
-                  : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-xs'
-              }`}
-            >
-              {/* Header */}
-              <div className="flex items-start justify-between">
-                <div>
-                  <span
-                    className="w-2.5 h-2.5 rounded-full inline-block mr-1.5 align-middle"
-                    style={{ backgroundColor: seg.color }}
-                  />
-                  <h3 className="text-sm font-bold text-slate-900 inline-block align-middle">
-                    {seg.name}
-                  </h3>
-                </div>
-                <span className="text-[11px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
-                  {seg.percentage}%
-                </span>
-              </div>
-
-              {/* Metric Values */}
-              <div className="space-y-2 pt-1 border-t border-slate-100">
-                <div className="flex items-baseline justify-between">
-                  <span className="text-xs text-slate-500">Customer Count</span>
-                  <span className="text-sm font-extrabold text-slate-900">
-                    {seg.count.toLocaleString()}
-                  </span>
-                </div>
-
-                <div className="flex items-baseline justify-between">
-                  <span className="text-xs text-slate-500">Avg. Spending</span>
-                  <span className="text-sm font-extrabold text-blue-700">
-                    {seg.avgSpending}/mo
-                  </span>
-                </div>
-
-                <div className="pt-2 border-t border-slate-100 space-y-1">
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">
-                    Recommended Product
-                  </span>
-                  <div className="flex items-center space-x-1.5 text-xs font-semibold text-slate-800">
-                    <Icon className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                    <span className="truncate">{seg.recommendedProduct}</span>
-                  </div>
-                </div>
-
-                <div className="p-2 bg-purple-50/70 border border-purple-100 rounded-lg text-[11px] text-purple-900 leading-snug">
-                  <div className="flex items-center gap-1 font-bold text-purple-800 mb-0.5">
-                    <Sparkles className="w-3 h-3 text-purple-600" />
-                    <span>AI Opportunity</span>
-                  </div>
-                  {seg.aiOpportunity}
-                </div>
-              </div>
-
-              {/* Selection footer */}
-              <div className="pt-1 flex items-center justify-between text-xs">
-                <span
-                  className={`text-[11px] font-bold ${
-                    isSelected ? 'text-blue-600' : 'text-slate-400'
-                  }`}
-                >
-                  {isSelected ? '● Currently Active' : 'Click to inspect'}
-                </span>
-                <ChevronRight className={`w-3.5 h-3.5 ${isSelected ? 'text-blue-600' : 'text-slate-400'}`} />
-              </div>
-            </div>
-          );
-        })}
+  return (
+    <div className="space-y-6 pb-12">
+      {/* Top Banner */}
+      <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-purple-900 rounded-2xl p-6 sm:p-8 text-white shadow-sm border border-slate-800 relative overflow-hidden">
+        <div className="absolute right-0 top-0 bottom-0 w-1/2 bg-gradient-to-l from-white/10 to-transparent pointer-events-none" />
+        <div className="relative z-10 max-w-3xl space-y-3">
+          <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-white/10 text-purple-200 border border-white/15 text-xs font-semibold">
+            <Sparkles className="w-3.5 h-3.5 text-purple-300" />
+            <span>BankAI Behavioral Clustering</span>
+          </div>
+          <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
+            Micro-Segmentation Engine
+          </h2>
+          <p className="text-blue-100 text-sm sm:text-base leading-relaxed">
+            The Cognizant ML Engine continually groups your {total.toLocaleString()} customers into highly targeted behavioral clusters based on spending velocity, credit utilization, and liquidity patterns to maximize NBO conversion lift.
+          </p>
+        </div>
       </div>
 
-      {/* Segment Performance Recharts Chart */}
-      <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pb-3 border-b border-slate-100">
+      {/* Segment Distribution Chart */}
+      <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
           <div>
-            <h3 className="text-sm font-bold text-slate-900">
-              Segment Performance & Spending Velocity
-            </h3>
-            <p className="text-xs text-slate-500">
-              Comparison of customer base volume vs. monthly transactional value ($)
-            </p>
-          </div>
-          <div className="flex items-center space-x-4 text-xs">
-            <span className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded bg-blue-600 inline-block" />
-              Customer Volume
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded bg-emerald-500 inline-block" />
-              Avg Spend ($)
-            </span>
+            <h3 className="text-base font-bold text-slate-900">Segment Volume & Target Lift</h3>
+            <p className="text-xs text-slate-500">Live baseline conversion distribution</p>
           </div>
         </div>
 
-        <div className="h-68 w-full">
+        <div className="h-72 w-full">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart
-              data={performanceChartData}
-              margin={{ top: 10, right: 30, left: 10, bottom: 20 }}
-            >
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-              <XAxis
-                dataKey="name"
-                tick={{ fontSize: 11, fill: '#475569' }}
-                interval={0}
+            <BarChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+              <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#64748b', fontWeight: 600 }} axisLine={false} tickLine={false} />
+              <YAxis yAxisId="left" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(v) => `${(v/1000).toFixed(1)}k`} />
+              <RechartsTooltip
+                cursor={{ fill: '#f8fafc' }}
+                contentStyle={{ borderRadius: '0.75rem', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
               />
-              <YAxis
-                yAxisId="left"
-                orientation="left"
-                stroke="#2563eb"
-                tick={{ fontSize: 11, fill: '#2563eb' }}
-                tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`}
-              />
-              <YAxis
-                yAxisId="right"
-                orientation="right"
-                stroke="#10b981"
-                tick={{ fontSize: 11, fill: '#10b981' }}
-                tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`}
-              />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#ffffff',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '0.5rem',
-                  fontSize: '12px',
-                }}
-                formatter={(val, name) => [
-                  name === 'customerCount' ? `${val.toLocaleString()} accounts` : `$${val.toLocaleString()}/mo`,
-                  name === 'customerCount' ? 'Customer Size' : 'Avg Spend',
-                ]}
-              />
-              <Bar
-                yAxisId="left"
-                dataKey="customerCount"
-                fill="#2563eb"
-                radius={[4, 4, 0, 0]}
-                barSize={28}
-              />
-              <Bar
-                yAxisId="right"
-                dataKey="avgSpending"
-                fill="#10b981"
-                radius={[4, 4, 0, 0]}
-                barSize={28}
-              />
+              <Bar yAxisId="left" dataKey="count" radius={[4, 4, 0, 0]} barSize={40}>
+                {chartData.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={entry.color} />
+                ))}
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
       </div>
 
-      {/* Selected Segment Customer Table Drill-Down */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-        <div className="p-5 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-slate-50/50">
-          <div>
-            <div className="flex items-center space-x-2">
-              <span
-                className="w-3 h-3 rounded-full"
-                style={{ backgroundColor: selectedSegment.color }}
-              />
-              <h3 className="text-sm font-bold text-slate-900">
-                {selectedSegment.name} — Customer Profiles ({segmentCustomers.length} Sample Profiles)
-              </h3>
+      {/* Segments Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+        {segments.map((seg) => (
+          <div
+            key={seg.id}
+            className="bg-white rounded-xl border border-slate-200 shadow-xs hover:shadow-md hover:border-slate-300 transition-all overflow-hidden flex flex-col h-full group"
+          >
+            {/* Header */}
+            <div className="p-5 border-b border-slate-100 relative">
+              <div className="absolute top-0 right-0 w-16 h-16 rounded-bl-[60px] opacity-10" style={{ backgroundColor: seg.color }} />
+              <h3 className="text-base font-extrabold text-slate-900 mb-1">{seg.name}</h3>
+              <p className="text-xs text-slate-500 font-medium">
+                {seg.count.toLocaleString()} customers ({seg.percentage}%)
+              </p>
             </div>
-            <p className="text-xs text-slate-500 mt-0.5">
-              {selectedSegment.description}
-            </p>
+
+            {/* Content */}
+            <div className="p-5 space-y-4 flex-1">
+              <p className="text-xs text-slate-600 leading-relaxed min-h-[40px]">{seg.description}</p>
+              
+              <div className="grid grid-cols-2 gap-3 bg-slate-50 rounded-lg p-3 border border-slate-100">
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Est. Avg Spending</span>
+                  <p className="text-sm font-extrabold text-slate-900">{seg.avgSpending}/mo</p>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">AI Match</span>
+                  <p className="text-sm font-bold text-blue-700 truncate">{seg.recommendedProduct}</p>
+                </div>
+              </div>
+              
+              <div className="bg-purple-50/50 rounded-lg p-3 border border-purple-100">
+                <span className="text-[10px] font-bold text-purple-600 flex items-center gap-1.5 uppercase tracking-wider mb-1">
+                  <Sparkles className="w-3 h-3" />
+                  Opportunity
+                </span>
+                <p className="text-xs text-purple-900 font-medium leading-snug">{seg.aiOpportunity}</p>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="p-4 bg-slate-50 border-t border-slate-100 grid grid-cols-2 gap-3">
+              <button
+                onClick={() => onSelectSegmentFilter(seg.name)}
+                className="inline-flex items-center justify-center space-x-1.5 px-3 py-2 bg-white border border-slate-200 hover:bg-slate-100 hover:border-slate-300 text-slate-700 font-semibold rounded-lg text-xs transition-colors cursor-pointer"
+              >
+                <Users className="w-3.5 h-3.5" />
+                <span>View Audience</span>
+              </button>
+              <button
+                onClick={() => onStartCampaign(seg.recommendedProduct, seg.name)}
+                className="inline-flex items-center justify-center space-x-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg text-xs shadow-sm transition-colors cursor-pointer"
+              >
+                <Target className="w-3.5 h-3.5" />
+                <span>Target Offer</span>
+              </button>
+            </div>
           </div>
-
-          <div className="flex items-center space-x-2.5 self-start sm:self-auto">
-            <button
-              onClick={() => onSelectSegmentFilter && onSelectSegmentFilter(selectedSegment.name)}
-              className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
-            >
-              <Filter className="w-3.5 h-3.5 text-slate-500" />
-              <span>Filter in Customers Tab</span>
-            </button>
-            <button
-              onClick={() => onStartCampaign && onStartCampaign(selectedSegment.recommendedProduct, selectedSegment.name)}
-              className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer shadow-xs"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Launch Campaign</span>
-            </button>
-          </div>
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-              <tr>
-                <th className="px-5 py-3">Customer</th>
-                <th className="px-5 py-3">Monthly Spend</th>
-                <th className="px-5 py-3">Recommended Product</th>
-                <th className="px-5 py-3">Propensity</th>
-                <th className="px-5 py-3">Primary Trigger Pattern</th>
-                <th className="px-5 py-3 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {segmentCustomers.map((customer) => {
-                const Icon = getProductIcon(customer.recommendedProduct);
-                return (
-                  <tr
-                    key={customer.id}
-                    className="hover:bg-slate-50/80 transition-colors"
-                  >
-                    <td className="px-5 py-3.5 whitespace-nowrap">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center font-bold text-slate-700">
-                          {customer.name.slice(0, 2)}
-                        </div>
-                        <div>
-                          <p className="font-bold text-slate-900">{customer.name}</p>
-                          <p className="text-[11px] text-slate-500">{customer.id} • {customer.city}</p>
-                        </div>
-                      </div>
-                    </td>
-
-                    <td className="px-5 py-3.5 whitespace-nowrap font-bold text-slate-800">
-                      {customer.monthlySpending}
-                    </td>
-
-                    <td className="px-5 py-3.5 whitespace-nowrap">
-                      <div className="flex items-center space-x-1.5 font-semibold text-slate-800">
-                        <Icon className="w-3.5 h-3.5 text-blue-600" />
-                        <span>{customer.recommendedProduct}</span>
-                      </div>
-                    </td>
-
-                    <td className="px-5 py-3.5 whitespace-nowrap">
-                      <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                        {customer.propensity}% Match
-                      </span>
-                    </td>
-
-                    <td className="px-5 py-3.5 max-w-xs truncate text-slate-600">
-                      {customer.behaviourPatterns[0]}
-                    </td>
-
-                    <td className="px-5 py-3.5 whitespace-nowrap text-right">
-                      <button
-                        onClick={() => onSelectCustomer(customer)}
-                        className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold rounded-lg transition-colors cursor-pointer"
-                      >
-                        View 360°
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        ))}
       </div>
     </div>
   );

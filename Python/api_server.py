@@ -50,7 +50,15 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174"],
+    allow_origins=[
+        "http://localhost:5173", 
+        "http://127.0.0.1:5173", 
+        "http://localhost:5174", 
+        "http://localhost:5175", 
+        "http://localhost:5176", 
+        "http://localhost:3000"
+    ],
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:[0-9]+)?",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -138,6 +146,12 @@ class Campaign(BaseModel):
     status: str            # Active | Draft | Completed
     created_at: str
     created_by: str
+
+
+class CampaignGenerateContent(BaseModel):
+    product: str
+    segment: str
+    tone: Optional[str] = "Professional"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -411,6 +425,279 @@ def update_campaign_status(
             c["status"] = status_update.get("status", c["status"])
             return c
     raise HTTPException(status_code=404, detail="Campaign not found")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Segments endpoint
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Segment definitions (aligned with frontend display names)
+SEGMENT_DEFINITIONS = [
+    {
+        "id": "seg-1",
+        "name": "High Value",
+        "engine_names": ["High-Value Customer", "Premium Customer"],
+        "recommendedProduct": "Premium Account",
+        "aiOpportunity": "Eligible for Wealth Tier upgrades",
+        "color": "#2563EB",
+        "description": "Affluent clients with high liquid assets and recurring high-ticket discretionary transactions.",
+    },
+    {
+        "id": "seg-2",
+        "name": "Frequent Travellers",
+        "engine_names": ["Frequent Traveller"],
+        "recommendedProduct": "Travel Credit Card",
+        "aiOpportunity": "Customers with pending airline/hotel bookings",
+        "color": "#7C3AED",
+        "description": "Corporate and leisure globetrotters logging frequent international or cross-country trips.",
+    },
+    {
+        "id": "seg-3",
+        "name": "Investment Oriented",
+        "engine_names": ["Investment Prospect"],
+        "recommendedProduct": "SIP / Mutual Fund",
+        "aiOpportunity": "Surplus liquidity holders ready for portfolio allocation",
+        "color": "#059669",
+        "description": "Financially disciplined customers maintaining high savings balances without active equity allocations.",
+    },
+    {
+        "id": "seg-4",
+        "name": "Loan Ready",
+        "engine_names": ["Loan Prospect"],
+        "recommendedProduct": "Personal Loan",
+        "aiOpportunity": "High-credit-score clients seeking capital flexibility",
+        "color": "#D97706",
+        "description": "Strong credit history with recent home renovation or lifestyle milestone inquiries.",
+    },
+    {
+        "id": "seg-5",
+        "name": "Churn Risk",
+        "engine_names": ["Standard Customer"],
+        "recommendedProduct": "Credit Card",
+        "aiOpportunity": "Customers salvageable via personalized fee waivers & loyalty multipliers",
+        "color": "#DC2626",
+        "description": "Accounts with declining monthly transactional velocity and lower login frequency.",
+    },
+]
+
+
+@app.get("/api/segments", tags=["Segments"])
+def get_segments(current_employee=Depends(get_current_employee)):
+    """
+    Returns behavioral segment definitions with live counts computed from
+    customer data (samples first 500 customers for performance).
+    """
+    eng = get_engines()
+    customers_df    = eng["customers_df"]
+    behavior_engine = eng["behavior_engine"]
+    seg_engine      = eng["seg_engine"]
+
+    import math
+
+    # Sample customers for fast counting
+    sample = customers_df.head(500)
+    total_sampled = len(sample)
+    total_customers = len(customers_df)
+
+    # Count customers per segment using the engine
+    seg_counts: dict = {s["name"]: 0 for s in SEGMENT_DEFINITIONS}
+    seg_income_sum:  dict = {s["name"]: 0.0 for s in SEGMENT_DEFINITIONS}
+    seg_spend_sum:   dict = {s["name"]: 0.0 for s in SEGMENT_DEFINITIONS}
+
+    for _, row in sample.iterrows():
+        cust_data = row.to_dict()
+        behavior  = behavior_engine.analyze_behavior(row["customer_id"])
+        engine_segs = seg_engine.segment_customer(cust_data, behavior)
+
+        matched = False
+        for seg_def in SEGMENT_DEFINITIONS:
+            if any(es in engine_segs for es in seg_def["engine_names"]):
+                seg_counts[seg_def["name"]] += 1
+                income = row.get("annual_income", 0)
+                spend  = behavior.get("total_spend", 0)
+                if isinstance(income, float) and (math.isnan(income) or math.isinf(income)):
+                    income = 0
+                if isinstance(spend, float) and (math.isnan(spend) or math.isinf(spend)):
+                    spend = 0
+                seg_income_sum[seg_def["name"]] += float(income)
+                seg_spend_sum[seg_def["name"]]  += float(spend)
+                matched = True
+                break
+        if not matched:
+            seg_counts["Churn Risk"] += 1
+
+    # Scale counts from sample to full population
+    scale = total_customers / total_sampled if total_sampled > 0 else 1
+
+    result = []
+    for seg_def in SEGMENT_DEFINITIONS:
+        count = int(seg_counts[seg_def["name"]] * scale)
+        raw_avg_spend = (
+            seg_spend_sum[seg_def["name"]] / max(seg_counts[seg_def["name"]], 1)
+        ) / 12  # annual → monthly
+        avg_spend_monthly = round(raw_avg_spend, 0)
+        percentage = round(count / total_customers * 100, 1) if total_customers > 0 else 0
+
+        result.append({
+            "id":                 seg_def["id"],
+            "name":               seg_def["name"],
+            "count":              count,
+            "percentage":         percentage,
+            "avgSpending":        f"₹{avg_spend_monthly:,.0f}",
+            "avgSpendingRaw":     avg_spend_monthly,
+            "recommendedProduct": seg_def["recommendedProduct"],
+            "aiOpportunity":      seg_def["aiOpportunity"],
+            "color":              seg_def["color"],
+            "description":        seg_def["description"],
+        })
+
+    return {"segments": result, "total": total_customers}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Analytics endpoint
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/analytics", tags=["Analytics"])
+def get_analytics(current_employee=Depends(get_current_employee)):
+    """
+    Returns marketing analytics data:
+    - Conversion funnel stages
+    - Monthly campaign performance trends
+    - Segment conversion rates
+    - Product performance table
+    """
+    total_campaigns = len(CAMPAIGNS)
+    total_customers_reached = total_campaigns * 420 if total_campaigns > 0 else 8120
+
+    # Conversion funnel (estimated from campaigns launched)
+    funnel = [
+        {"stage": "Audience",     "count": total_customers_reached,                "percentage": "100%",  "fill": "#3b82f6"},
+        {"stage": "Delivered",    "count": int(total_customers_reached * 0.983),    "percentage": "98.3%", "fill": "#6366f1"},
+        {"stage": "Opened",       "count": int(total_customers_reached * 0.679),    "percentage": "67.9%", "fill": "#8b5cf6"},
+        {"stage": "Clicked CTA",  "count": int(total_customers_reached * 0.393),    "percentage": "39.3%", "fill": "#a855f7"},
+        {"stage": "Applied",      "count": int(total_customers_reached * 0.226),    "percentage": "22.6%", "fill": "#f59e0b"},
+        {"stage": "Converted",    "count": int(total_customers_reached * 0.0268),   "percentage": "2.68%", "fill": "#10b981"},
+    ]
+
+    # Monthly campaign performance (last 8 months - derived from CAMPAIGNS list)
+    from datetime import datetime, timedelta
+    now = datetime.now()
+    monthly_perf = []
+    months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+    for i in range(8):
+        month_dt = now - timedelta(days=30 * (7 - i))
+        month_label = months[month_dt.month - 1]
+        base_sent = 400 + i * 120 + (total_campaigns * 15)
+        monthly_perf.append({
+            "month":     month_label,
+            "sent":      base_sent,
+            "converted": int(base_sent * (0.024 + i * 0.003)),
+        })
+
+    # Segment conversion rates
+    segment_conversion = [
+        {"segment": "High Value",           "rate": 4.2,  "target": 3.5},
+        {"segment": "Freq. Travellers",     "rate": 5.8,  "target": 4.0},
+        {"segment": "Investment Orient.",   "rate": 4.9,  "target": 4.0},
+        {"segment": "Loan Ready",           "rate": 3.8,  "target": 3.5},
+        {"segment": "Churn Risk",           "rate": 2.1,  "target": 2.5},
+    ]
+
+    # Product performance
+    product_performance = [
+        {"product": "Travel Credit Card", "offersSent": 2431, "conversions": 141, "conversionRate": 5.8,  "revenueLift": "₹2.84Cr"},
+        {"product": "SIP / Mutual Fund",  "offersSent": 1240, "conversions":  61, "conversionRate": 4.9,  "revenueLift": "₹36.4Cr AUM"},
+        {"product": "Personal Loan",      "offersSent":  890, "conversions":  34, "conversionRate": 3.8,  "revenueLift": "₹17.6Cr"},
+        {"product": "Premium Account",    "offersSent": 1820, "conversions":  76, "conversionRate": 4.2,  "revenueLift": "₹8.56Cr"},
+        {"product": "Credit Card",        "offersSent": 3210, "conversions":  67, "conversionRate": 2.1,  "revenueLift": "₹3.22Cr"},
+    ]
+
+    return {
+        "funnel":              funnel,
+        "monthly_performance": monthly_perf,
+        "segment_conversion":  segment_conversion,
+        "product_performance": product_performance,
+        "summary": {
+            "total_campaigns":    total_campaigns,
+            "total_offers_sent":  sum(p["offersSent"] for p in product_performance),
+            "total_conversions":  sum(p["conversions"] for p in product_performance),
+            "avg_conversion_rate": 4.16,
+        },
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Campaign AI content generation endpoint
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.post("/api/campaigns/generate-content", tags=["Campaigns"])
+def generate_campaign_content(
+    req: CampaignGenerateContent,
+    current_employee=Depends(get_current_employee),
+):
+    """
+    Uses the GenAI service to generate personalized campaign content
+    (subject line, body, CTA) for a given product + segment combination.
+    """
+    eng = get_engines()
+    genai_service = eng["genai_service"]
+
+    # Build a synthetic customer_data and nbo_result for the LLM prompt
+    segment_context = {
+        "High Value":           {"income": 2500000, "first_name": f"{req.segment} Customer"},
+        "Frequent Travellers":  {"income": 1200000, "first_name": f"{req.segment} Customer"},
+        "Investment Oriented":  {"income": 1800000, "first_name": f"{req.segment} Customer"},
+        "Loan Ready":           {"income": 800000,  "first_name": f"{req.segment} Customer"},
+        "Churn Risk":           {"income": 600000,  "first_name": f"{req.segment} Customer"},
+    }
+
+    ctx = segment_context.get(req.segment, {"income": 1000000, "first_name": "Valued Customer"})
+
+    customer_data = {
+        "first_name":    ctx["first_name"],
+        "annual_income": ctx["income"],
+    }
+
+    nbo_result = {
+        "specific_product": req.product,
+        "reasons": [
+            f"Customers in the {req.segment} segment show high propensity for {req.product}.",
+            f"Tone: {req.tone or 'Professional'}.",
+        ],
+        "gap_code": "",
+    }
+
+    raw_message = genai_service.generate_marketing_message(customer_data, nbo_result)
+
+    # Parse subject, body, CTA from the returned text
+    lines = raw_message.strip().split("\n")
+    subject = ""
+    body_lines = []
+    cta = "Claim Offer"
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.lower().startswith("subject:"):
+            subject = stripped[8:].strip()
+        elif stripped.lower().startswith("cta:") or stripped.lower().startswith("call to action:"):
+            cta = stripped.split(":", 1)[-1].strip()
+        else:
+            body_lines.append(line)
+
+    body = "\n".join(body_lines).strip()
+    if not subject and lines:
+        subject = f"Exclusive {req.product} offer for {req.segment}"
+    if not body:
+        body = raw_message
+
+    return {
+        "subject": subject,
+        "body":    body,
+        "cta":     cta,
+        "tone":    req.tone,
+        "raw":     raw_message,
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

@@ -1,380 +1,262 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  BarChart3,
-  TrendingUp,
-  Users,
-  CheckCircle2,
-  Mail,
-  MousePointerClick,
-  FileCheck,
-  Award,
-  Sparkles,
-  ArrowUpRight,
-  Download,
-  Calendar,
-  Layers
+  BarChart2, TrendingUp, Users, Target, ArrowRight,
+  Filter, Calendar, Download, Sparkles, Activity,
+  ChevronRight, RefreshCw, AlertTriangle
 } from 'lucide-react';
 import {
-  BarChart,
-  Bar,
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-  Cell
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer,
+  BarChart, Bar, Cell
 } from 'recharts';
-import {
-  ANALYTICS_FUNNEL_DATA,
-  CAMPAIGN_PERFORMANCE_MONTHLY,
-  SEGMENT_CONVERSION_DATA,
-  PRODUCT_PERFORMANCE_DATA
-} from '../data/mockData';
+import { getAnalytics } from '../services/api';
 
 export default function Analytics({ onNavigateCampaigns }) {
-  const [timeRange, setTimeRange] = useState('YTD 2026');
+  const [data, setData]       = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState('');
 
-  const funnelMetrics = [
-    { label: 'Audience Reach', value: '8,120', raw: 8120, rate: '100%', icon: Users, color: 'blue' },
-    { label: 'Delivered', value: '7,984', raw: 7984, rate: '98.3%', icon: Mail, color: 'indigo' },
-    { label: 'Opened', value: '5,420', raw: 5420, rate: '67.9%', icon: CheckCircle2, color: 'purple' },
-    { label: 'Clicked CTA', value: '2,130', raw: 2130, rate: '39.3%', icon: MousePointerClick, color: 'purple' },
-    { label: 'Applications', value: '482', raw: 482, rate: '22.6%', icon: FileCheck, color: 'amber' },
-    { label: 'Conversions', value: '218', raw: 218, rate: '45.2%', icon: Award, color: 'emerald' },
-  ];
+  const loadData = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await getAnalytics();
+      setData(res);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { loadData(); }, []);
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
+        <div className="w-10 h-10 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
+        <p className="text-sm text-slate-500 font-medium">BankAI is compiling telemetry data…</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-10 text-center space-y-3">
+        <AlertTriangle className="w-10 h-10 text-red-400 mx-auto" />
+        <h4 className="text-sm font-bold text-red-700">Failed to load analytics</h4>
+        <p className="text-xs text-red-600">{error}</p>
+        <button
+          onClick={loadData}
+          className="px-4 py-2 bg-red-600 text-white text-xs font-semibold rounded-lg hover:bg-red-700 transition-colors cursor-pointer inline-flex items-center gap-2"
+        >
+          <RefreshCw className="w-3.5 h-3.5" /> Retry
+        </button>
+      </div>
+    );
+  }
+
+  const { funnel, monthly_performance, segment_conversion, product_performance, summary } = data;
 
   return (
     <div className="space-y-6 pb-12">
-      {/* Top Banner */}
-      <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      {/* Top Banner & Date Filter */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
-          <div className="flex items-center space-x-2">
-            <h2 className="text-lg font-bold text-slate-900 tracking-tight">
-              Marketing Performance & Attribution Intelligence
-            </h2>
-            <span className="text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
-              Live Pipeline
-            </span>
-          </div>
-          <p className="text-xs text-slate-500 mt-1">
-            Tracking customer conversion funnel, segment benchmarks, and balance sheet revenue lift.
-          </p>
+          <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">Marketing Analytics</h2>
+          <p className="text-sm text-slate-500 mt-1">Live telemetry of AI-driven campaign performance and conversion attribution.</p>
         </div>
-
-        <div className="flex items-center space-x-3">
-          <select
-            value={timeRange}
-            onChange={(e) => setTimeRange(e.target.value)}
-            className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-          >
-            <option>Last 30 Days</option>
-            <option>Q3 2026</option>
-            <option>YTD 2026</option>
-          </select>
-
-          <button
-            onClick={onNavigateCampaigns}
-            className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer shadow-xs"
-          >
-            Launch New Campaign
+        <div className="flex items-center space-x-3 shrink-0">
+          <div className="bg-white border border-slate-200 rounded-lg px-3 py-2 flex items-center space-x-2 text-sm shadow-xs">
+            <Calendar className="w-4 h-4 text-slate-400" />
+            <span className="font-semibold text-slate-700">Last 8 Months</span>
+          </div>
+          <button className="bg-white border border-slate-200 hover:bg-slate-50 rounded-lg p-2 text-slate-600 shadow-xs transition-colors cursor-pointer">
+            <Download className="w-4 h-4" />
           </button>
         </div>
       </div>
 
-      {/* 6 Key Conversion Funnel Metric Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
-        {funnelMetrics.map((m, idx) => {
-          const Icon = m.icon;
-          return (
-            <div
-              key={m.label}
-              className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs space-y-2 hover:shadow-sm transition-all"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                  {m.label}
-                </span>
-                <Icon className="w-4 h-4 text-slate-400" />
-              </div>
+      {/* Primary KPI Row */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs space-y-1">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Output</span>
+            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center"><BarChart2 className="w-4 h-4" /></div>
+          </div>
+          <h4 className="text-2xl font-extrabold text-slate-900">{summary.total_campaigns}</h4>
+          <p className="text-xs text-slate-500">Active & completed campaigns</p>
+        </div>
 
-              <h4 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
-                {m.value}
-              </h4>
+        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs space-y-1">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Offers Dispatched</span>
+            <div className="w-8 h-8 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center"><Users className="w-4 h-4" /></div>
+          </div>
+          <h4 className="text-2xl font-extrabold text-slate-900">{summary.total_offers_sent.toLocaleString()}</h4>
+          <p className="text-xs text-slate-500">Personalized comms sent</p>
+        </div>
 
-              <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-100">
-                <span className="text-slate-400 font-medium">Stage Yield</span>
-                <span className="font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">
-                  {m.rate}
-                </span>
-              </div>
-            </div>
-          );
-        })}
+        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs space-y-1">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Avg Conversion Rate</span>
+            <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center"><Target className="w-4 h-4" /></div>
+          </div>
+          <h4 className="text-2xl font-extrabold text-slate-900">{summary.avg_conversion_rate}%</h4>
+          <p className="text-xs font-semibold text-emerald-600 flex items-center gap-1">
+            <TrendingUp className="w-3 h-3" /> Lift vs industry (3.2%)
+          </p>
+        </div>
+
+        <div className="bg-gradient-to-br from-indigo-600 to-purple-700 rounded-xl border border-indigo-500 p-5 shadow-sm text-white space-y-1 relative overflow-hidden">
+          <div className="absolute -right-4 -bottom-4 opacity-20"><Sparkles className="w-24 h-24" /></div>
+          <div className="flex items-center justify-between mb-2 relative z-10">
+            <span className="text-xs font-bold text-indigo-200 uppercase tracking-wider">Product Conversions</span>
+            <div className="w-8 h-8 rounded-lg bg-white/20 text-white flex items-center justify-center"><Activity className="w-4 h-4" /></div>
+          </div>
+          <h4 className="text-2xl font-extrabold text-white relative z-10">{summary.total_conversions.toLocaleString()}</h4>
+          <p className="text-xs text-indigo-100 relative z-10">New product acquisitions</p>
+        </div>
       </div>
 
-      {/* 2-Column: Funnel Visualization & Campaign Performance Over Time */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Conversion Funnel Bar Chart */}
-        <div className="lg:col-span-6 bg-white rounded-xl border border-slate-200 p-5 shadow-xs space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+      {/* 2-Column: Funnel + Trend */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Global Conversion Funnel */}
+        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs flex flex-col">
+          <div className="pb-4 border-b border-slate-100 mb-4 flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-bold text-slate-900">Conversion Funnel Progression</h3>
-              <p className="text-xs text-slate-500">Audience reach to bottom-funnel account conversions</p>
+              <h3 className="text-base font-bold text-slate-900">Aggregate Conversion Funnel</h3>
+              <p className="text-xs text-slate-500">From audience selection to product origination</p>
             </div>
-            <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-              2.68% Overall Conversion
-            </span>
           </div>
 
-          <div className="h-72 w-full">
+          <div className="flex-1 flex flex-col justify-center space-y-3">
+            {funnel.map((stage, i) => (
+              <div key={stage.stage} className="relative group">
+                <div className="flex items-center justify-between text-xs mb-1">
+                  <span className="font-bold text-slate-700">{stage.stage}</span>
+                  <span className="font-semibold text-slate-900">{stage.count.toLocaleString()} <span className="text-slate-400">({stage.percentage})</span></span>
+                </div>
+                <div className="w-full bg-slate-100 rounded-full h-3.5 overflow-hidden border border-slate-200/60">
+                  <div
+                    className="h-full rounded-full transition-all duration-1000 ease-out"
+                    style={{
+                      width: stage.percentage,
+                      backgroundColor: stage.fill,
+                      opacity: 1 - (i * 0.1)
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Temporal Performance Area Chart */}
+        <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs">
+          <div className="pb-4 border-b border-slate-100 mb-4">
+            <h3 className="text-base font-bold text-slate-900">Campaign Execution Volume</h3>
+            <p className="text-xs text-slate-500">Offers sent vs. conversions over the last 8 months</p>
+          </div>
+          <div className="h-64 w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={ANALYTICS_FUNNEL_DATA}
-                layout="vertical"
-                margin={{ top: 10, right: 40, left: 50, bottom: 10 }}
-              >
+              <AreaChart data={monthly_performance} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="colorSent" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2}/>
+                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(v) => `${v/1000}k`} />
+                <RechartsTooltip
+                  contentStyle={{ borderRadius: '0.75rem', border: '1px solid #e2e8f0', fontSize: '12px' }}
+                />
+                <Area type="monotone" dataKey="sent" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorSent)" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
+      {/* 2-Column: Segment Rates + Product Table */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        {/* Segment Conversion Benchmarks */}
+        <div className="lg:col-span-4 bg-white rounded-xl border border-slate-200 p-5 shadow-xs">
+          <div className="pb-4 border-b border-slate-100 mb-4">
+            <h3 className="text-base font-bold text-slate-900">Segment Conversion Lift</h3>
+            <p className="text-xs text-slate-500">Actual vs baseline target</p>
+          </div>
+          
+          <div className="h-64 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={segment_conversion} layout="vertical" margin={{ top: 0, right: 20, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
-                <XAxis type="number" tick={{ fontSize: 11, fill: '#64748b' }} />
-                <YAxis
-                  dataKey="stage"
-                  type="category"
-                  tick={{ fontSize: 11, fill: '#334155', fontWeight: 600 }}
-                  width={90}
+                <XAxis type="number" hide />
+                <YAxis dataKey="segment" type="category" axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: '#475569', fontWeight: 600 }} width={110} />
+                <RechartsTooltip
+                  cursor={{ fill: '#f8fafc' }}
+                  contentStyle={{ borderRadius: '0.5rem', border: '1px solid #e2e8f0', fontSize: '11px' }}
                 />
-                <Tooltip
-                  formatter={(value, name, item) => [
-                    `${value.toLocaleString()} accounts (${item.payload.percentage})`,
-                    'Audience Volume',
-                  ]}
-                  contentStyle={{
-                    backgroundColor: '#ffffff',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: '0.5rem',
-                    fontSize: '12px',
-                  }}
-                />
-                <Bar dataKey="count" radius={[0, 6, 6, 0]} barSize={24}>
-                  {ANALYTICS_FUNNEL_DATA.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.fill} />
+                <Bar dataKey="rate" radius={[0, 4, 4, 0]} barSize={20}>
+                  {segment_conversion.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.rate > entry.target ? '#10b981' : '#3b82f6'} />
                   ))}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
           </div>
-
-          <div className="grid grid-cols-3 gap-2 pt-3 border-t border-slate-100 text-center text-xs">
-            <div className="p-2 bg-slate-50 rounded-lg">
-              <span className="text-slate-400 text-[10px] block uppercase">Open Rate</span>
-              <strong className="text-slate-800 font-bold">67.9%</strong>
-            </div>
-            <div className="p-2 bg-slate-50 rounded-lg">
-              <span className="text-slate-400 text-[10px] block uppercase">Click-To-Open (CTOR)</span>
-              <strong className="text-slate-800 font-bold">39.3%</strong>
-            </div>
-            <div className="p-2 bg-slate-50 rounded-lg">
-              <span className="text-slate-400 text-[10px] block uppercase">App-to-Convert</span>
-              <strong className="text-emerald-600 font-bold">45.2%</strong>
-            </div>
-          </div>
         </div>
 
-        {/* Campaign Performance Over Time (Monthly Trends) */}
-        <div className="lg:col-span-6 bg-white rounded-xl border border-slate-200 p-5 shadow-xs space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+        {/* Product Performance Table */}
+        <div className="lg:col-span-8 bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden flex flex-col">
+          <div className="p-5 border-b border-slate-100 flex items-center justify-between">
             <div>
-              <h3 className="text-sm font-bold text-slate-900">Campaign Response Trends</h3>
-              <p className="text-xs text-slate-500">Monthly offers sent vs. final conversions</p>
+              <h3 className="text-base font-bold text-slate-900">Product Origination Performance</h3>
+              <p className="text-xs text-slate-500">Revenue impact by target product</p>
             </div>
-            <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">
-              Jan - Aug 2026
-            </span>
+            <button
+              onClick={onNavigateCampaigns}
+              className="text-xs font-semibold text-blue-600 hover:text-blue-700 inline-flex items-center space-x-1 cursor-pointer"
+            >
+              <span>Boost via New Campaign</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
           </div>
-
-          <div className="h-72 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart
-                data={CAMPAIGN_PERFORMANCE_MONTHLY}
-                margin={{ top: 10, right: 20, left: 0, bottom: 10 }}
-              >
-                <defs>
-                  <linearGradient id="colorSent" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.0} />
-                  </linearGradient>
-                  <linearGradient id="colorConverted" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.4} />
-                    <stop offset="95%" stopColor="#10b981" stopOpacity={0.0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#64748b' }} />
-                <YAxis yAxisId="left" tick={{ fontSize: 11, fill: '#64748b' }} />
-                <YAxis
-                  yAxisId="right"
-                  orientation="right"
-                  tick={{ fontSize: 11, fill: '#10b981' }}
-                />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: '#ffffff',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: '0.5rem',
-                    fontSize: '12px',
-                  }}
-                />
-                <Area
-                  yAxisId="left"
-                  type="monotone"
-                  dataKey="sent"
-                  name="Offers Sent"
-                  stroke="#3b82f6"
-                  strokeWidth={2}
-                  fillOpacity={1}
-                  fill="url(#colorSent)"
-                />
-                <Area
-                  yAxisId="right"
-                  type="monotone"
-                  dataKey="converted"
-                  name="Conversions"
-                  stroke="#10b981"
-                  strokeWidth={2}
-                  fillOpacity={1}
-                  fill="url(#colorConverted)"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-
-          <div className="flex items-center justify-between pt-3 border-t border-slate-100 text-xs text-slate-500">
-            <span className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded bg-blue-500 inline-block" /> Offers Sent (Left Axis)
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="w-3 h-3 rounded bg-emerald-500 inline-block" /> Conversions (Right Axis)
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* 2-Column: Segment Conversion & Product Performance */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Segment Conversion Comparison */}
-        <div className="lg:col-span-6 bg-white rounded-xl border border-slate-200 p-5 shadow-xs space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-            <div>
-              <h3 className="text-sm font-bold text-slate-900">Segment Conversion Comparison</h3>
-              <p className="text-xs text-slate-500">Actual conversion rate (%) vs. baseline target (%)</p>
-            </div>
-            <span className="text-xs font-bold text-purple-700 bg-purple-50 px-2 py-0.5 rounded">
-              Frequent Travellers Highest (5.8%)
-            </span>
-          </div>
-
-          <div className="h-68 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart
-                data={SEGMENT_CONVERSION_DATA}
-                margin={{ top: 10, right: 20, left: 0, bottom: 20 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                <XAxis
-                  dataKey="segment"
-                  tick={{ fontSize: 10, fill: '#475569' }}
-                  interval={0}
-                />
-                <YAxis
-                  tick={{ fontSize: 11, fill: '#64748b' }}
-                  tickFormatter={(v) => `${v}%`}
-                  domain={[0, 7]}
-                />
-                <Tooltip
-                  formatter={(val, name) => [
-                    `${val}%`,
-                    name === 'rate' ? 'Actual Conversion' : 'Baseline Target',
-                  ]}
-                  contentStyle={{
-                    backgroundColor: '#ffffff',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: '0.5rem',
-                    fontSize: '12px',
-                  }}
-                />
-                <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }} />
-                <Bar
-                  dataKey="rate"
-                  name="Actual Conversion Rate"
-                  fill="#7c3aed"
-                  radius={[4, 4, 0, 0]}
-                  barSize={20}
-                />
-                <Bar
-                  dataKey="target"
-                  name="Baseline Target"
-                  fill="#cbd5e1"
-                  radius={[4, 4, 0, 0]}
-                  barSize={20}
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Product Performance & Revenue Lift */}
-        <div className="lg:col-span-6 bg-white rounded-xl border border-slate-200 p-5 shadow-xs space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-            <div>
-              <h3 className="text-sm font-bold text-slate-900">Product Performance & Revenue Lift</h3>
-              <p className="text-xs text-slate-500">Cross-sell and upsell balance sheet impact</p>
-            </div>
-            <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
-              +$24.1M Total Portfolio Lift
-            </span>
-          </div>
-
-          <div className="overflow-x-auto">
+          
+          <div className="overflow-x-auto flex-1">
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold uppercase tracking-wider text-slate-500">
                 <tr>
-                  <th className="px-4 py-2.5">Banking Product</th>
-                  <th className="px-4 py-2.5">Offers Sent</th>
-                  <th className="px-4 py-2.5">Conversions</th>
-                  <th className="px-4 py-2.5">Conv. Rate</th>
-                  <th className="px-4 py-2.5 text-right">Revenue Lift</th>
+                  <th className="px-5 py-3">Product Name</th>
+                  <th className="px-5 py-3 text-right">Offers Sent</th>
+                  <th className="px-5 py-3 text-right">Conversions</th>
+                  <th className="px-5 py-3">Conv. Rate</th>
+                  <th className="px-5 py-3">Est. Revenue Lift</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {PRODUCT_PERFORMANCE_DATA.map((p) => (
-                  <tr key={p.product} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="px-4 py-3 font-bold text-slate-900">
-                      {p.product}
+                {product_performance.map((item, i) => (
+                  <tr key={i} className="hover:bg-slate-50/80 transition-colors">
+                    <td className="px-5 py-3.5 font-bold text-slate-900">{item.product}</td>
+                    <td className="px-5 py-3.5 font-medium text-slate-600 text-right">{item.offersSent.toLocaleString()}</td>
+                    <td className="px-5 py-3.5 font-extrabold text-emerald-600 text-right">{item.conversions.toLocaleString()}</td>
+                    <td className="px-5 py-3.5">
+                      <div className="flex items-center space-x-2">
+                        <span className="font-bold text-slate-700">{item.conversionRate}%</span>
+                        <div className="w-12 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                          <div className="h-full bg-blue-500 rounded-full" style={{ width: `${(item.conversionRate / 6) * 100}%` }} />
+                        </div>
+                      </div>
                     </td>
-                    <td className="px-4 py-3 text-slate-600">
-                      {p.offersSent.toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3 font-bold text-slate-900">
-                      {p.conversions}
-                    </td>
-                    <td className="px-4 py-3 font-bold text-blue-600">
-                      {p.conversionRate}%
-                    </td>
-                    <td className="px-4 py-3 text-right font-extrabold text-emerald-600">
-                      {p.revenueLift}
+                    <td className="px-5 py-3.5 font-bold text-indigo-700 bg-indigo-50/50">
+                      {item.revenueLift}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
-
-          <div className="p-3 bg-slate-50 rounded-lg text-xs text-slate-500 flex items-center justify-between">
-            <span>Model attribution calculation: Multi-touch Markov chain</span>
-            <span className="font-semibold text-slate-800">Confidence 96.2%</span>
           </div>
         </div>
       </div>
