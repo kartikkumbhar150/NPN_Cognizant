@@ -1,0 +1,6 @@
+{
+  "name": "BankAI",
+  "description": "Frontend-only banking marketing intelligence web application with customer 360, AI segment targeting, and campaign orchestration.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
