@@ -35,16 +35,24 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(BASE_DIR, ".env"))
 
 # ── AI Engine imports ─────────────────────────────────────────────────────────
-from data_loader import load_customers, load_transactions, load_credit_cards, load_loan_products, load_investment_products
-from feature_engine import FeatureEngine
-from behavior_engine import BehaviorEngine
-from event_engine import EventEngine
-from segmentation import SegmentationEngine
-from nbo_engine import NBOEngine
-from genai_service import GenAIService
-from financial_analyst import FinancialAnalyst
-from explainability_engine import ExplainabilityEngine
-from marketing_guard import MarketingGuard
+from ai_engine.data_loader import (
+    load_customers, 
+    load_transactions, 
+    load_credit_cards, 
+    load_loan_products, 
+    load_investment_products,
+    load_insurance_products,
+    load_customer_holdings
+)
+from ai_engine.feature_engine import FeatureEngine
+from ai_engine.behavior_engine import BehaviorEngine
+from ai_engine.event_engine import EventEngine
+from ai_engine.segmentation import SegmentationEngine
+from ai_engine.nbo_engine import NBOEngine
+from ai_engine.genai_service import GenAIService
+from ai_engine.financial_analyst import FinancialAnalyst
+from ai_engine.explainability_engine import ExplainabilityEngine
+from ai_engine.marketing_guard import MarketingGuard
 
 # ── App setup ─────────────────────────────────────────────────────────────────
 app = FastAPI(
@@ -100,23 +108,26 @@ _data_cache = {}
 def get_engines():
     """Lazily load data and initialise engines (cached after first call)."""
     if not _data_cache:
-        print("Loading data and initialising AI engines v2...")
+        print("Loading data and initialising AI engines v3.0...")
         customers_df    = load_customers()
         transactions_df = load_transactions()
         credit_cards_df = load_credit_cards()
         loans_df        = load_loan_products()
         investments_df  = load_investment_products()
+        insurance_df    = load_insurance_products()
+        holdings_data   = load_customer_holdings()
 
         _data_cache["customers_df"]    = customers_df
         _data_cache["transactions_df"] = transactions_df
+        _data_cache["holdings_data"]   = holdings_data
         
-        # v2 Engines
-        _data_cache["feature_engine"]    = FeatureEngine(transactions_df)
+        # v3 Engines
+        _data_cache["feature_engine"]    = FeatureEngine(transactions_df, holdings_data)
         _data_cache["behavior_engine"]   = BehaviorEngine(transactions_df)
         _data_cache["event_engine"]      = EventEngine(transactions_df)
         _data_cache["seg_engine"]        = SegmentationEngine()
         _data_cache["financial_analyst"] = FinancialAnalyst()
-        _data_cache["nbo_engine"]        = NBOEngine(credit_cards_df, loans_df, investments_df)
+        _data_cache["nbo_engine"]        = NBOEngine(credit_cards_df, loans_df, investments_df, insurance_df)
         _data_cache["explain_engine"]    = ExplainabilityEngine()
         _data_cache["marketing_guard"]   = MarketingGuard()
         _data_cache["genai_service"]     = GenAIService()
@@ -381,15 +392,9 @@ def analyze_customer(
             customer_data=customer_data,
             nbo_result=nbo,
             explanation=explanation,
-            channel=channel
+            channel=channel,
+            features=features  # Pass full feature set for portfolio context
         )
-        # GenAI Service returns a strict JSON-like string block. We can just return it as a string for now,
-        # but since we instructed it to return JSON, we should extract the body for the frontend.
-        try:
-            # We already parsed JSON in genai_service and returned formatted text
-            pass
-        except Exception:
-            pass
 
     def serialise(obj):
         if isinstance(obj, float):
@@ -417,7 +422,61 @@ def analyze_customer(
         "explanation": explanation,
         "marketing_check": marketing_check,
         "genai_message": genai_msg,
+        "holdings_summary": {
+            "has_insurance": features.has_insurance,
+            "has_health_insurance": features.has_health_insurance,
+            "has_life_insurance": features.has_life_insurance,
+            "has_investments": features.has_investments,
+            "has_home_loan": features.has_home_loan,
+            "has_personal_loan": features.has_personal_loan,
+            "held_card_names": features.held_card_names,
+            "held_loan_categories": features.held_loan_categories,
+            "held_investment_categories": features.held_investment_categories,
+            "held_insurance_categories": features.held_insurance_categories,
+            "total_emi_monthly": features.total_emi_monthly,
+            "total_sip_monthly": features.total_sip_monthly,
+            "total_assets_value": features.total_assets_value,
+            "total_outstanding_debt": features.total_outstanding_debt,
+            "net_worth_indicator": features.net_worth_indicator,
+        },
     })
+
+
+@app.get("/api/customers/{customer_id}/holdings", tags=["Customers"])
+def get_customer_holdings(
+    customer_id: str,
+    current_employee=Depends(get_current_employee),
+):
+    """
+    Get the full Customer 360 raw holdings for a customer.
+    """
+    eng = get_engines()
+    customers_df = eng["customers_df"]
+    feature_engine = eng["feature_engine"]
+    
+    customer_row = customers_df[customers_df["customer_id"] == customer_id]
+    if customer_row.empty:
+        raise HTTPException(status_code=404, detail=f"Customer {customer_id} not found")
+
+    customer_data = customer_row.iloc[0].to_dict()
+    features = feature_engine.compute(customer_id, customer_data)
+
+    def serialise(obj):
+        import math
+        if isinstance(obj, float):
+            if math.isnan(obj) or math.isinf(obj): return None
+            return obj
+        if hasattr(obj, "item"):
+            val = obj.item()
+            if isinstance(val, float) and (math.isnan(val) or math.isinf(val)): return None
+            return val
+        if isinstance(obj, dict):
+            return {k: serialise(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [serialise(i) for i in obj]
+        return obj
+
+    return serialise(features.holdings)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

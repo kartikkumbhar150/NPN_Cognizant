@@ -16,9 +16,9 @@ import pandas as pd
 import yaml
 import os
 
-from feature_engine import CustomerFeatureSet
-from eligibility_engine import EligibilityEngine
-from product_fit_engine import ProductFitEngine
+from ai_engine.feature_engine import CustomerFeatureSet
+from ai_engine.eligibility_engine import EligibilityEngine
+from ai_engine.product_fit_engine import ProductFitEngine
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +47,8 @@ class NBOEngine:
     Determines the Next Best Offer by orchestrating eligibility, fit, and propensity.
     """
 
-    def __init__(self, credit_cards: pd.DataFrame, loans: pd.DataFrame, investments: pd.DataFrame = None):
-        self.eligibility_engine = EligibilityEngine(credit_cards, loans, investments)
+    def __init__(self, credit_cards: pd.DataFrame, loans: pd.DataFrame, investments: pd.DataFrame = None, insurance: pd.DataFrame = None):
+        self.eligibility_engine = EligibilityEngine(credit_cards, loans, investments, insurance)
         self.fit_engine = ProductFitEngine()
         
         # Keep v1 attributes for backward compatibility

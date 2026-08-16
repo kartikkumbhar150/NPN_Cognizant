@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
-from feature_engine import CustomerFeatureSet
+from ai_engine.feature_engine import CustomerFeatureSet
 
 logger = logging.getLogger(__name__)
 
@@ -29,46 +29,52 @@ logger = logging.getLogger(__name__)
 
 BEHAVIOR_TAG_MAP: Dict[str, List[str]] = {
     # If customer has high travel spend → look for travel-tagged products
-    "Travel": ["tag_travel", "tag_travel_card", "tag_international", "tag_lounge"],
+    "Travel": ["tag_travel", "tag_travel_card", "tag_international", "tag_lounge", "tag_airport_lounge"],
     "Investment": ["tag_investment", "tag_sip", "tag_mutual_fund", "tag_wealth"],
-    "Insurance": ["tag_insurance", "tag_health"],
+    "Insurance": ["tag_insurance", "tag_health", "tag_health_insurance", "tag_life_insurance"],
     "Dining": ["tag_cashback", "tag_dining", "tag_rewards"],
-    "Shopping": ["tag_cashback", "tag_shopping", "tag_rewards", "tag_ecommerce"],
+    "Shopping": ["tag_cashback", "tag_shopping", "tag_rewards", "tag_ecommerce", "tag_online_shopping"],
     "Fuel": ["tag_fuel", "tag_cashback"],
-    "Medical": ["tag_health_insurance", "tag_medical"],
+    "Medical": ["tag_health_insurance", "tag_medical", "tag_insurance"],
     "Groceries": ["tag_cashback", "tag_grocery"],
-    "Rent": ["tag_home_loan"],
-    "Education": ["tag_education_loan"],
+    "Rent": ["tag_home_loan", "tag_home"],
+    "Education": ["tag_education_loan", "tag_education"],
+    "EMI": ["tag_personal"],
 }
 
 # ── Event type → product tag mapping ─────────────────────────────────────────
 EVENT_TAG_MAP: Dict[str, List[str]] = {
-    "FREQUENT_TRAVEL": ["tag_travel", "tag_international", "tag_lounge"],
+    "FREQUENT_TRAVEL": ["tag_travel", "tag_international", "tag_lounge", "tag_airport_lounge"],
     "HIGH_VALUE_TRAVEL_PURCHASE": ["tag_travel", "tag_premium"],
     "TRAVEL_SPEND_INCREASING": ["tag_travel"],
     "NO_INVESTMENT_ACTIVITY": ["tag_investment", "tag_sip", "tag_mutual_fund", "tag_nps"],
     "INVESTMENT_ACTIVITY_GROWING": ["tag_investment", "tag_sip", "tag_growth"],
     "INVESTMENT_ACTIVITY_LAPSED": ["tag_investment", "tag_sip"],
-    "NO_INSURANCE_SIGNAL": ["tag_insurance", "tag_health_insurance"],
-    "ELEVATED_HEALTHCARE_SPEND_PATTERN": ["tag_health_insurance"],
-    "SALARY_INCREASE_DETECTED": ["tag_investment", "tag_wealth", "tag_sip"],
+    "NO_INSURANCE_SIGNAL": ["tag_insurance", "tag_health_insurance", "tag_life_insurance"],
+    "ELEVATED_HEALTHCARE_SPEND_PATTERN": ["tag_health_insurance", "tag_medical"],
+    "SALARY_INCREASE_DETECTED": ["tag_investment", "tag_wealth", "tag_sip", "tag_life_insurance"],
     "HIGH_SURPLUS": ["tag_investment", "tag_fd", "tag_sip"],
-    "ECOMMERCE_SPEND_INCREASING": ["tag_cashback", "tag_shopping"],
+    "ECOMMERCE_SPEND_INCREASING": ["tag_cashback", "tag_shopping", "tag_online_shopping"],
     "DINING_SPEND_INCREASING": ["tag_cashback", "tag_dining"],
 }
 
 # ── Financial gap → product tag mapping ──────────────────────────────────────
 GAP_TAG_MAP: Dict[str, List[str]] = {
     "NO_INVESTMENT": ["tag_investment", "tag_sip", "tag_mutual_fund"],
+    "LOW_INVESTMENT": ["tag_investment", "tag_sip"],
     "GROWING_INCOME_NO_INVESTMENT": ["tag_investment", "tag_sip"],
     "LOW_SAVINGS": ["tag_fd", "tag_investment"],
     "CRITICAL_SAVINGS": ["tag_fd"],
-    "NO_INSURANCE": ["tag_insurance", "tag_health_insurance"],
-    "HIGH_MEDICAL_NO_INSURANCE": ["tag_health_insurance", "tag_insurance"],
-    "TRAVELLER_NO_CARD": ["tag_travel", "tag_international"],
+    "NO_INSURANCE": ["tag_insurance", "tag_health_insurance", "tag_life_insurance"],
+    "NO_HEALTH_INSURANCE": ["tag_health_insurance", "tag_insurance"],
+    "NO_LIFE_INSURANCE": ["tag_life_insurance", "tag_insurance"],
+    "HIGH_MEDICAL_NO_INSURANCE": ["tag_health_insurance", "tag_insurance", "tag_medical"],
+    "TRAVELLER_NO_CARD": ["tag_travel", "tag_international", "tag_airport_lounge"],
     "OVERSPENDING_DINING": ["tag_cashback", "tag_dining"],
-    "OVERSPENDING_SHOPPING": ["tag_cashback", "tag_shopping"],
-    "HIGH_RENT_BURDEN": ["tag_home_loan"],
+    "OVERSPENDING_SHOPPING": ["tag_cashback", "tag_shopping", "tag_online_shopping"],
+    "HIGH_RENT_BURDEN": ["tag_home_loan", "tag_home"],
+    "OVER_LEVERAGED": [],
+    "HIGH_OUTSTANDING_DEBT": [],
 }
 
 
@@ -240,6 +246,19 @@ class ProductFitEngine:
                 evidence.append(
                     f"Customer has estimated monthly surplus of ₹{surplus:,.0f} available for investment"
                 )
+
+        # Insurance evidence
+        if "tag_insurance" in matched_tags or "tag_health_insurance" in matched_tags or "tag_life_insurance" in matched_tags:
+            if not features.has_insurance:
+                evidence.append("Customer has no active insurance policies — coverage gap detected")
+            elif not features.has_health_insurance:
+                evidence.append("Customer has other insurance but no health coverage")
+            elif not features.has_life_insurance:
+                evidence.append("Customer has other insurance but no life/term coverage")
+            if w90:
+                med_spend = w90.category_spend.get("Medical", 0)
+                if med_spend > 5000:
+                    evidence.append(f"Customer spent ₹{med_spend:,.0f} on medical in last 90 days")
 
         # Cashback evidence
         if "tag_cashback" in matched_tags and w90:

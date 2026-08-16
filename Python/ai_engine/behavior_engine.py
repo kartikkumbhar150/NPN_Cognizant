@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
-from feature_engine import CustomerFeatureSet, categorize_merchant, WINDOW_DAYS
+from ai_engine.feature_engine import CustomerFeatureSet, categorize_merchant, WINDOW_DAYS
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +117,7 @@ class BehaviorEngine:
             return []
 
         from event_engine import EventEngine
-        from feature_engine import FeatureEngine
+        from ai_engine.feature_engine import FeatureEngine
 
         try:
             # Create a minimal feature set for the event engine

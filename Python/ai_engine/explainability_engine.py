@@ -19,7 +19,7 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from feature_engine import CustomerFeatureSet
+from ai_engine.feature_engine import CustomerFeatureSet
 
 logger = logging.getLogger(__name__)
 

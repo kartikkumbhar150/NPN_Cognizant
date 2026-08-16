@@ -52,3 +52,19 @@ def load_loan_products():
 def load_investment_products():
     """Loads the investment products catalogue from Supabase."""
     return _load_table('investment_products', 'investment_products.csv')
+
+def load_insurance_products():
+    """Loads the insurance product catalogue from Supabase."""
+    return _load_table('insurance', 'insurance.csv')
+
+def load_customer_holdings():
+    """Loads all Customer 360 holdings datasets."""
+    return {
+        "accounts": _load_table('customer_accounts', 'generated_customer_360/customer_accounts.csv'),
+        "deposits": _load_table('customer_deposits', 'generated_customer_360/customer_deposits.csv'),
+        "credit_cards": _load_table('customer_credit_cards', 'generated_customer_360/customer_credit_cards.csv'),
+        "debit_cards": _load_table('customer_debit_cards', 'generated_customer_360/customer_debit_cards.csv'),
+        "investments": _load_table('customer_investments', 'generated_customer_360/customer_investments.csv'),
+        "loans": _load_table('customer_loans', 'generated_customer_360/customer_loans.csv'),
+        "insurance": _load_table('customer_insurance', 'generated_customer_360/customer_insurance.csv'),
+    }

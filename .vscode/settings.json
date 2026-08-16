@@ -1,0 +1,8 @@
+{
+    "python.analysis.extraPaths": [
+        "./Python/ai_engine"
+    ],
+    "python.autoComplete.extraPaths": [
+        "./Python/ai_engine"
+    ]
+}

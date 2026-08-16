@@ -22,7 +22,7 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
-from feature_engine import CustomerFeatureSet, categorize_merchant
+from ai_engine.feature_engine import CustomerFeatureSet, categorize_merchant
 
 logger = logging.getLogger(__name__)
 

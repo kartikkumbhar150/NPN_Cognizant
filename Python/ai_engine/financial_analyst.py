@@ -16,7 +16,7 @@ import pandas as pd
 import yaml
 import os
 
-from feature_engine import CustomerFeatureSet
+from ai_engine.feature_engine import CustomerFeatureSet
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +114,18 @@ class FinancialAnalyst:
         invest_spend_180 = w180.category_spend.get("Investment", 0) if w180 else 0
         insurance_spend_180 = w180.category_spend.get("Insurance", 0) if w180 else 0
         medical_spend_180 = w180.category_spend.get("Medical", 0) if w180 else 0
+
+        # ── Clean boolean signals from holdings (v3.0) ───────────────────────────
+        has_insurance      = features.has_insurance
+        has_health_ins     = features.has_health_insurance
+        has_life_ins       = features.has_life_insurance
+        has_investments    = features.has_investments
+        has_home_loan      = features.has_home_loan
+        total_emi_monthly  = features.total_emi_monthly
+        total_outstanding  = features.total_outstanding_debt
+        foir               = (total_emi_monthly / monthly_income) if monthly_income > 0 else 0
+        marital_status     = features.profile.get("marital_status", "Single")
+        age                = features.profile.get("age", 30)
         
         # Calculate percentages of income based on 90d window
         w90 = features.windows.get(90)
@@ -125,24 +137,53 @@ class FinancialAnalyst:
         travel_pct = (w90.category_spend.get("Travel", 0) / total_spend_90) if (w90 and total_spend_90 > 0) else 0
 
         # GAP 1: No investments despite good income
-        if annual_income >= BENCHMARKS["income_invest_thresh"] and (invest_spend_180 / 6.0) < (monthly_income * BENCHMARKS["min_invest_ratio"]):
-            gap_amount = (monthly_income * BENCHMARKS["min_invest_ratio"]) - (invest_spend_180 / 6.0)
+        # If they have no investments, OR if they have investments but very low transaction activity
+        if annual_income >= BENCHMARKS["income_invest_thresh"] and not has_investments:
             gaps.append({
                 "code": "NO_INVESTMENT",
                 "severity": 9,
-                "title": "Zero / Low Investment Activity",
-                "insight": f"You earn ₹{monthly_income:,.0f}/month but have invested below the recommended {BENCHMARKS['min_invest_ratio']*100}% threshold. You are ~₹{gap_amount:,.0f}/month short.",
+                "title": "Zero Investment Portfolio",
+                "insight": f"You earn ₹{monthly_income:,.0f}/month but have no active investments. Start investing now to beat inflation.",
+                "products": ["Investment/SIP", "FD"]
+            })
+        elif annual_income >= BENCHMARKS["income_invest_thresh"] and has_investments and (invest_spend_180 / 6.0) < (monthly_income * BENCHMARKS["min_invest_ratio"]):
+            gap_amount = (monthly_income * BENCHMARKS["min_invest_ratio"]) - (invest_spend_180 / 6.0)
+            gaps.append({
+                "code": "LOW_INVESTMENT",
+                "severity": 7,
+                "title": "Sub-Optimal Investment Activity",
+                "insight": f"You are investing below the recommended {BENCHMARKS['min_invest_ratio']*100:.0f}% threshold. Consider topping up by ~₹{gap_amount:,.0f}/month.",
                 "products": ["Investment/SIP", "FD"]
             })
 
-        # GAP 2: No insurance coverage
-        if insurance_spend_180 == 0:
+        # GAP 2a: No insurance at all
+        if not has_insurance and insurance_spend_180 == 0:
             gaps.append({
                 "code": "NO_INSURANCE",
                 "severity": 8,
                 "title": "No Insurance Coverage Detected",
-                "insight": "There is no insurance premium payment in your transaction history, leaving you financially exposed.",
+                "insight": "You have no active insurance policies, leaving you financially exposed to unexpected events.",
+                "products": ["Health Insurance", "Term Insurance"]
+            })
+
+        # GAP 2b: Has insurance but no health insurance specifically
+        elif has_insurance and not has_health_ins:
+            gaps.append({
+                "code": "NO_HEALTH_INSURANCE",
+                "severity": 7,
+                "title": "No Health Insurance Policy",
+                "insight": "You have other insurance, but no health insurance. Medical emergencies can be financially devastating without it.",
                 "products": ["Health Insurance"]
+            })
+
+        # GAP 2c: No life insurance for married customers
+        if not has_life_ins and marital_status in ("Married",) and annual_income >= 600000:
+            gaps.append({
+                "code": "NO_LIFE_INSURANCE",
+                "severity": 8,
+                "title": "No Life Insurance — Dependents at Risk",
+                "insight": "You are married with a good income but have no life or term insurance plan. Your dependents are financially exposed.",
+                "products": ["Term Insurance", "Life Insurance"]
             })
 
         # GAP 3: Critical savings rate
@@ -202,33 +243,53 @@ class FinancialAnalyst:
             })
 
         # GAP 7: High rent burden
-        if rent_pct >= BENCHMARKS["rent_pct_bad"]:
+        if rent_pct >= BENCHMARKS["rent_pct_bad"] and not has_home_loan:
             gaps.append({
                 "code": "HIGH_RENT_BURDEN",
                 "severity": 6,
                 "title": "Very High Rent Burden",
-                "insight": f"Rent accounts for {rent_pct*100:.1f}% of your income. Consider a Home Loan to build an asset instead.",
+                "insight": f"Rent accounts for {rent_pct*100:.1f}% of your income. A Home Loan could convert rent into asset-building.",
                 "products": ["Home Loan"]
             })
 
-        # GAP 8: High medical spend without insurance
-        if medical_spend_180 > BENCHMARKS["medical_high_abs"] and insurance_spend_180 == 0:
+        # GAP 8: High medical spend without health insurance
+        if medical_spend_180 > BENCHMARKS["medical_high_abs"] and not has_health_ins:
             gaps.append({
                 "code": "HIGH_MEDICAL_NO_INSURANCE",
                 "severity": 9,
-                "title": "High Medical Expenses — No Insurance",
-                "insight": f"You spent ₹{medical_spend_180:,.0f} on healthcare with no insurance detected. This is a serious risk.",
+                "title": "High Medical Expenses — No Health Insurance",
+                "insight": f"You spent ₹{medical_spend_180:,.0f} on healthcare with no health insurance. This is a critical financial risk.",
                 "products": ["Health Insurance"]
             })
 
         # GAP 9: Growing salary but no investment growth
-        if features.income_trend == "up" and invest_spend_180 == 0:
+        if features.income_trend == "up" and not has_investments:
             gaps.append({
                 "code": "GROWING_INCOME_NO_INVESTMENT",
                 "severity": 7,
                 "title": "Rising Income, Zero Investment",
-                "insight": "Your salary is growing, but you have not started investing. This is the best time to begin.",
+                "insight": "Your salary is growing, but you have not started investing. This is the ideal time to begin building wealth.",
                 "products": ["Investment/SIP"]
+            })
+
+        # GAP 10: Over-leveraged (FOIR > 50%)
+        if foir >= 0.50 and monthly_income > 0:
+            gaps.append({
+                "code": "OVER_LEVERAGED",
+                "severity": 8,
+                "title": "Over-Leveraged — EMI Burden Too High",
+                "insight": f"Your loan EMIs consume {foir*100:.1f}% of your income (FOIR). The safe limit is 40-50%. Avoid taking additional loans.",
+                "products": []
+            })
+
+        # GAP 11: High outstanding debt relative to income
+        if total_outstanding > annual_income * 4 and annual_income > 0:
+            gaps.append({
+                "code": "HIGH_OUTSTANDING_DEBT",
+                "severity": 7,
+                "title": "Very High Debt-to-Income Ratio",
+                "insight": f"Your outstanding debt of ₹{total_outstanding:,.0f} is over 4x your annual income. Focus on debt reduction.",
+                "products": []
             })
 
         # Sort by severity descending
@@ -263,15 +324,26 @@ class FinancialAnalyst:
             breakdown["investment"] = min(25, int((ratio / BENCHMARKS["min_invest_ratio"]) * 25))
 
         # 3. Insurance Coverage (20 pts)
-        ins_gap = next((g for g in gaps if g["code"] in ("NO_INSURANCE", "HIGH_MEDICAL_NO_INSURANCE")), None)
+        ins_gap = next((g for g in gaps if g["code"] in ("NO_INSURANCE", "HIGH_MEDICAL_NO_INSURANCE", "NO_HEALTH_INSURANCE")), None)
         breakdown["insurance"] = 0 if ins_gap else 20
 
-        # 4. Spending Discipline (25 pts)
+        # 4. Spending Discipline (20 pts)
         penalty = sum(
             5 for g in gaps
             if g["code"] in ("OVERSPENDING_DINING", "OVERSPENDING_SHOPPING", "CRITICAL_SAVINGS", "HIGH_RENT_BURDEN")
         )
-        breakdown["spending_discipline"] = max(0, 25 - penalty)
+        breakdown["spending_discipline"] = max(0, 20 - penalty)
+
+        # 5. Debt Health (10 pts)
+        foir_val = features.total_emi_monthly / features.monthly_income_avg if features.monthly_income_avg > 0 else 0
+        if foir_val <= 0.30:
+            breakdown["debt_health"] = 10
+        elif foir_val <= 0.45:
+            breakdown["debt_health"] = 6
+        elif foir_val <= 0.55:
+            breakdown["debt_health"] = 2
+        else:
+            breakdown["debt_health"] = 0
 
         total = sum(breakdown.values())
 

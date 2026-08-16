@@ -169,6 +169,37 @@ class CustomerFeatureSet:
     data_quality_score: float = 1.0   # 0–1
     data_warnings: List[str] = field(default_factory=list)
 
+    # ── Raw Product Holdings (all records from DB per customer) ──────────────
+    holdings: Dict[str, List[Dict[str, Any]]] = field(default_factory=lambda: {
+        "accounts": [],
+        "deposits": [],
+        "credit_cards": [],
+        "debit_cards": [],
+        "investments": [],
+        "loans": [],
+        "insurance": [],
+    })
+
+    # ── Derived Holdings Signals (computed from holdings) ──────────────────────
+    has_insurance: bool = False
+    has_life_insurance: bool = False
+    has_health_insurance: bool = False
+    has_investments: bool = False
+    has_home_loan: bool = False
+    has_personal_loan: bool = False
+    has_vehicle_loan: bool = False
+    has_education_loan: bool = False
+    has_deposits: bool = False
+    total_emi_monthly: float = 0.0          # Sum of all active loan EMIs
+    total_sip_monthly: float = 0.0          # Sum of all active SIP/investment monthly amounts
+    total_assets_value: float = 0.0         # investments current_value + deposits principal
+    total_outstanding_debt: float = 0.0     # Sum of all outstanding loan principals
+    net_worth_indicator: float = 0.0        # total_assets_value - total_outstanding_debt
+    held_insurance_categories: List[str] = field(default_factory=list)   # e.g. ["Health", "Life"]
+    held_investment_categories: List[str] = field(default_factory=list)  # e.g. ["Mutual Fund", "FD"]
+    held_loan_categories: List[str] = field(default_factory=list)        # e.g. ["Personal", "Home"]
+    held_card_names: List[str] = field(default_factory=list)             # e.g. ["Diners Black"]
+
     # ── Feature snapshot for audit ────────────────────────────────────────────
     feature_version: str = "2.0"
 
@@ -178,12 +209,13 @@ class FeatureEngine:
     Transforms raw customer profile + transactions into CustomerFeatureSet.
 
     Usage:
-        engine = FeatureEngine(transactions_df)
+        engine = FeatureEngine(transactions_df, holdings_data)
         features = engine.compute(customer_id, customer_data)
     """
 
-    def __init__(self, transactions_df: pd.DataFrame) -> None:
+    def __init__(self, transactions_df: pd.DataFrame, holdings_data: Dict[str, pd.DataFrame] = None) -> None:
         self.transactions = self._clean_transactions(transactions_df)
+        self.holdings_data = holdings_data or {}
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -218,6 +250,7 @@ class FeatureEngine:
             fs = self._compute_surplus(fs, customer_data)
             fs = self._compute_trends(fs, cust_tx)
             fs = self._detect_recurring(fs, cust_tx)
+            fs = self._compute_holdings(fs, customer_id)
             fs = self._compute_data_quality(fs, customer_data, cust_tx)
 
         except Exception as exc:
@@ -559,6 +592,91 @@ class FeatureEngine:
         fs.recurring_payments = sorted(
             recurring, key=lambda x: x["consistency_score"], reverse=True
         )
+        return fs
+
+    # ── Holdings ──────────────────────────────────────────────────────────────
+
+    def _compute_holdings(self, fs: CustomerFeatureSet, customer_id: str) -> CustomerFeatureSet:
+        """
+        Extract customer holdings from the pre-loaded DataFrames and compute
+        all derived signals (booleans, aggregates, category lists).
+        """
+        if not self.holdings_data:
+            return fs
+
+        # ── Load raw records per category ─────────────────────────────────────
+        for category, df in self.holdings_data.items():
+            if df is not None and not df.empty and "customer_id" in df.columns:
+                cust_df = df[df["customer_id"] == customer_id].copy()
+                if not cust_df.empty:
+                    records = cust_df.where(pd.notnull(cust_df), None).to_dict("records")
+                    fs.holdings[category] = records
+
+        # ── Derive signals from loans ──────────────────────────────────────────
+        loans = fs.holdings.get("loans", [])
+        active_loans = [l for l in loans if str(l.get("loan_status", "")).lower() == "active"]
+        if active_loans:
+            loan_cats = [str(l.get("loan_category", "")) for l in active_loans]
+            fs.held_loan_categories = list(set(loan_cats))
+            fs.has_home_loan = any("home" in c.lower() for c in loan_cats)
+            fs.has_personal_loan = any("personal" in c.lower() for c in loan_cats)
+            fs.has_vehicle_loan = any(c.lower() in ("vehicle", "car", "auto", "two wheeler") for c in loan_cats)
+            fs.has_education_loan = any("education" in c.lower() for c in loan_cats)
+            fs.total_emi_monthly = sum(float(l.get("emi_amount") or 0) for l in active_loans)
+            fs.total_outstanding_debt = sum(float(l.get("outstanding_principal") or 0) for l in active_loans)
+
+        # ── Derive signals from investments ────────────────────────────────────
+        investments = fs.holdings.get("investments", [])
+        active_investments = [i for i in investments if str(i.get("status", "")).lower() == "active"]
+        if active_investments:
+            inv_cats = [str(i.get("investment_category", "")) for i in active_investments]
+            fs.held_investment_categories = list(set(inv_cats))
+            fs.has_investments = True
+            fs.total_sip_monthly = sum(float(i.get("monthly_amount") or 0) for i in active_investments)
+            fs.total_assets_value += sum(float(i.get("current_value") or 0) for i in active_investments)
+
+        # ── Derive signals from deposits ───────────────────────────────────────
+        deposits = fs.holdings.get("deposits", [])
+        active_deposits = [d for d in deposits if str(d.get("deposit_status", "")).lower() == "active"]
+        if active_deposits:
+            fs.has_deposits = True
+            fs.total_assets_value += sum(float(d.get("principal_amount") or 0) for d in active_deposits)
+
+        # ── Derive signals from insurance ──────────────────────────────────────
+        insurance = fs.holdings.get("insurance", [])
+        active_insurance = [i for i in insurance if str(i.get("policy_status", "")).lower() == "active"]
+        if active_insurance:
+            ins_cats = [str(i.get("insurance_category", "")) for i in active_insurance]
+            fs.held_insurance_categories = list(set(ins_cats))
+            fs.has_insurance = True
+            fs.has_life_insurance = any(c.lower() in ("life", "term", "ulip") for c in ins_cats)
+            fs.has_health_insurance = any(c.lower() in ("health", "medical") for c in ins_cats)
+
+        # ── Derive signals from credit cards ───────────────────────────────────
+        credit_cards = fs.holdings.get("credit_cards", [])
+        active_cards = [c for c in credit_cards if str(c.get("card_status", "")).lower() == "active"]
+        if active_cards:
+            fs.held_card_names = [str(c.get("card_name", "")) for c in active_cards]
+
+        # ── Net worth indicator ────────────────────────────────────────────────
+        fs.net_worth_indicator = fs.total_assets_value - fs.total_outstanding_debt
+
+        # ── Correct surplus: deduct actual EMIs and SIPs ───────────────────────
+        # We already computed estimated_monthly_surplus = income - spend
+        # Now subtract actual committed outflows not fully captured in spend
+        committed_outflows = fs.total_emi_monthly + fs.total_sip_monthly
+        if committed_outflows > 0 and fs.monthly_income_avg > 0:
+            # Only adjust if surplus hasn't already captured these (EMIs are in spend as "EMI" category)
+            w90 = fs.windows.get(90)
+            emi_in_spend = (w90.category_spend.get("EMI", 0) / 3.0) if w90 else 0
+            invest_in_spend = (w90.category_spend.get("Investment", 0) / 3.0) if w90 else 0
+            # If transaction-based EMI/invest spend is much less than actual, use actual
+            if committed_outflows > (emi_in_spend + invest_in_spend) * 1.5:
+                adjusted_surplus = fs.monthly_income_avg - fs.monthly_spend_avg_90d - max(0, committed_outflows - emi_in_spend - invest_in_spend)
+                fs.estimated_monthly_surplus = adjusted_surplus
+                if fs.monthly_income_avg > 0:
+                    fs.surplus_ratio = round(max(-1.0, fs.estimated_monthly_surplus / fs.monthly_income_avg), 4)
+
         return fs
 
     # ── Data quality ──────────────────────────────────────────────────────────

@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
-from feature_engine import CustomerFeatureSet
+from ai_engine.feature_engine import CustomerFeatureSet
 
 logger = logging.getLogger(__name__)
 
@@ -40,10 +40,12 @@ class EligibilityEngine:
         credit_cards_df: pd.DataFrame,
         loans_df: pd.DataFrame,
         investments_df: Optional[pd.DataFrame] = None,
+        insurance_df: Optional[pd.DataFrame] = None,
     ) -> None:
         self.credit_cards = credit_cards_df if credit_cards_df is not None else pd.DataFrame()
         self.loans = loans_df if loans_df is not None else pd.DataFrame()
         self.investments = investments_df if investments_df is not None else pd.DataFrame()
+        self.insurance = insurance_df if insurance_df is not None else pd.DataFrame()
 
     # ── Public API ─────────────────────────────────────────────────────────────
 
@@ -70,6 +72,11 @@ class EligibilityEngine:
             # Investment products
             for _, product in self.investments.iterrows():
                 result = self._evaluate_investment(product, features, customer_data)
+                results.append(result)
+
+            # Insurance products
+            for _, product in self.insurance.iterrows():
+                result = self._evaluate_insurance(product, features, customer_data)
                 results.append(result)
 
         except Exception as exc:
@@ -107,6 +114,13 @@ class EligibilityEngine:
         # Rule 1: Product must be active
         if product_status != "Active":
             failed.append(f"Product is not active (status: {product_status})")
+
+        # Anti-Duplication Gate: Check if user already holds this card
+        held_cards = features.holdings.get("credit_cards", [])
+        for card in held_cards:
+            if card.get("card_name") == product_name or card.get("credit_card_product_id") == product.get("card_id"):
+                failed.append(f"Customer already holds this credit card ({product_name})")
+                score = 0.0
 
         # Rule 2: Age
         min_age = self._safe_int(product.get("minimum_age"), 18)
@@ -172,6 +186,16 @@ class EligibilityEngine:
         credit_score = features.profile.get("credit_score", 0)
         product_name = str(product.get("product_name", "Loan Product"))
 
+        # Anti-Duplication Gate: Check if user already holds this loan type
+        # For loans, we check category (e.g. Home, Personal) instead of exact product name
+        # since holding one home loan generally means we shouldn't recommend another immediately.
+        loan_category = str(product.get("loan_category", "")).lower()
+        held_loans = features.holdings.get("loans", [])
+        for loan in held_loans:
+            if loan_category in str(loan.get("loan_category", "")).lower():
+                failed.append(f"Customer already has an active {product.get('loan_category')} loan")
+                score = 0.0
+
         # Rule 1: Age
         min_age = self._safe_int(product.get("minimum_age"), 21)
         max_age = self._safe_int(product.get("maximum_age"), 65)
@@ -236,6 +260,13 @@ class EligibilityEngine:
         if product_status != "Active":
             failed.append(f"Product not active (status: {product_status})")
 
+        # Anti-Duplication Gate: Check if user already holds this investment product
+        held_investments = features.holdings.get("investments", [])
+        for inv in held_investments:
+            if inv.get("investment_product_name") == product_name or inv.get("investment_product_id") == product.get("investment_product_id"):
+                failed.append(f"Customer already holds this investment product ({product_name})")
+                score = 0.0
+
         # Rule 2: Age
         min_age = self._safe_int(product.get("minimum_age"), 18)
         max_age = self._safe_int(product.get("maximum_age"), 75)
@@ -272,6 +303,75 @@ class EligibilityEngine:
             "product_id": str(product.get("investment_product_id", product.get("product_id", ""))),
             "product_name": product_name,
             "product_type": "investment",
+            "eligible": eligible,
+            "eligibility_score": round(max(0.0, score), 2),
+            "passed_rules": passed,
+            "failed_rules": failed,
+            "product_data": product.to_dict(),
+        }
+
+    # ── Insurance eligibility ──────────────────────────────────────────────────
+
+    def _evaluate_insurance(
+        self,
+        product: pd.Series,
+        features: CustomerFeatureSet,
+        customer_data: Dict,
+    ) -> Dict[str, Any]:
+        """Evaluate insurance product eligibility."""
+        passed: List[str] = []
+        failed: List[str] = []
+        score = 1.0
+
+        age = features.profile.get("age", 0)
+        annual_income = features.profile.get("annual_income", 0) or (features.monthly_income_avg * 12)
+        product_status = str(product.get("product_status", "Active")).strip()
+        product_name = str(product.get("product_name", "Insurance Product"))
+        insurance_category = str(product.get("insurance_category", ""))
+        minimum_premium = self._safe_float(product.get("minimum_premium"), 0)
+
+        # Rule 1: Active status
+        if product_status != "Active":
+            failed.append(f"Product not active (status: {product_status})")
+
+        # Anti-Duplication Gate: Check if user already holds this insurance category
+        # Don't recommend Life insurance if they already have Life. But Health insurance
+        # can still be recommended even if they have Life.
+        held_ins_cats = features.held_insurance_categories
+        if insurance_category and insurance_category in held_ins_cats:
+            failed.append(f"Customer already holds {insurance_category} insurance")
+            score = 0.0
+
+        # Rule 2: Entry age gate
+        min_entry_age = self._safe_int(product.get("minimum_entry_age"), 18)
+        max_entry_age = self._safe_int(product.get("maximum_entry_age"), 70)
+        if age < min_entry_age:
+            failed.append(f"Age {age} < minimum entry age {min_entry_age}")
+            score -= 0.5
+        elif age > max_entry_age:
+            failed.append(f"Age {age} > maximum entry age {max_entry_age}")
+            score -= 0.5
+        else:
+            passed.append(f"Age {age} within entry range [{min_entry_age}–{max_entry_age}]")
+
+        # Rule 3: Premium affordability (minimum premium must be < 10% of monthly income)
+        monthly_income = features.monthly_income_avg or (annual_income / 12)
+        monthly_premium_equiv = minimum_premium / 12.0
+        if monthly_income > 0 and monthly_premium_equiv > monthly_income * 0.10:
+            failed.append(
+                f"Minimum premium ₹{minimum_premium:,.0f}/year may not be affordable "
+                f"on income ₹{monthly_income:,.0f}/month"
+            )
+            score -= 0.3
+        else:
+            passed.append(f"Premium ₹{minimum_premium:,.0f}/year is affordable")
+
+        eligible = len(failed) == 0
+        return {
+            "product_id": str(product.get("insurance_product_id", product.get("product_id", ""))),
+            "product_name": product_name,
+            "product_type": "insurance",
+            "insurance_category": insurance_category,
             "eligible": eligible,
             "eligibility_score": round(max(0.0, score), 2),
             "passed_rules": passed,

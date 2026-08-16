@@ -2,7 +2,7 @@ import sys
 sys.stdout.reconfigure(encoding='utf-8', newline='\n')
 
 from data_loader import load_customers, load_transactions, load_credit_cards, load_loan_products, load_investment_products
-from feature_engine import FeatureEngine
+from ai_engine.feature_engine import FeatureEngine
 from behavior_engine import BehaviorEngine
 from event_engine import EventEngine
 from financial_analyst import FinancialAnalyst

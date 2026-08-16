@@ -16,7 +16,7 @@ class GenAIService:
         if not self.use_mock:
             self.client = Groq(api_key=self.api_key)
 
-    def generate_marketing_message(self, customer_data, nbo_result, explanation, channel="email"):
+    def generate_marketing_message(self, customer_data, nbo_result, explanation, channel="email", features=None):
         """
         Phase 7: GenAI Personalization.
         Uses structured explanation and outputs strict JSON.
@@ -30,6 +30,30 @@ class GenAIService:
         if not reasons:
             reasons = ["This product is well-suited to your current financial needs."]
 
+        # Build portfolio summary from features (v3.0 upgrade)
+        portfolio_lines = []
+        if features:
+            if features.held_card_names:
+                portfolio_lines.append(f"Credit Cards: {', '.join(features.held_card_names)}")
+            else:
+                portfolio_lines.append("Credit Cards: None")
+            if features.held_loan_categories:
+                portfolio_lines.append(f"Active Loans: {', '.join(features.held_loan_categories)} (EMI: ₹{features.total_emi_monthly:,.0f}/month)")
+            else:
+                portfolio_lines.append("Active Loans: None")
+            if features.held_investment_categories:
+                portfolio_lines.append(f"Investments: {', '.join(features.held_investment_categories)} (Value: ₹{features.total_assets_value:,.0f})")
+            else:
+                portfolio_lines.append("Investments: NONE")
+            if features.held_insurance_categories:
+                portfolio_lines.append(f"Insurance: {', '.join(features.held_insurance_categories)}")
+            else:
+                portfolio_lines.append("Insurance: NONE")
+            if features.net_worth_indicator != 0:
+                portfolio_lines.append(f"Estimated Net Worth: ₹{features.net_worth_indicator:,.0f}")
+        
+        portfolio_context = "\n".join(portfolio_lines) if portfolio_lines else "Portfolio data not available."
+
         # Structured constraints
         max_words = 150 if channel == "email" else 40
         format_instructions = "1 subject line, 1 short greeting, 2 short paragraphs, 1 CTA." if channel == "email" else "1 short sentence, 1 CTA link."
@@ -40,14 +64,18 @@ Write a personalized {channel} for the customer below.
 CUSTOMER NAME: {first_name}
 RECOMMENDED PRODUCT: {product}
 
+CUSTOMER PORTFOLIO:
+{portfolio_context}
+
 WHY WE ARE RECOMMENDING THIS (Use these exact reasons, do not invent new ones):
 {chr(10).join(['- ' + r for r in reasons])}
 
 STRICT INSTRUCTIONS:
 1. Do NOT invent product features, interest rates, or eligibility claims.
-2. Tone: professional, empathetic, clear.
-3. Max words: {max_words}
-4. Format: {format_instructions}
+2. Reference the customer's portfolio to make the message feel genuinely personal.
+3. Tone: professional, empathetic, clear.
+4. Max words: {max_words}
+5. Format: {format_instructions}
 
 OUTPUT FORMAT: You MUST return valid JSON exactly matching this schema:
 {{

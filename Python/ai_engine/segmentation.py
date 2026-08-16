@@ -15,7 +15,7 @@ import pandas as pd
 import yaml
 import os
 
-from feature_engine import CustomerFeatureSet
+from ai_engine.feature_engine import CustomerFeatureSet
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +94,7 @@ class SegmentationEngine:
                 
         # Prospect Segments
         invest_spend_365 = w365.category_spend.get('Investment', 0) if w365 else 0
-        if income > 800000 and invest_spend_365 < 10000:
+        if income > 800000 and not features.has_investments:
             assigned_segments.append('Investment Prospect')
             
         # Demographic Segments
@@ -103,7 +103,24 @@ class SegmentationEngine:
             
         if marital_status == 'Married' and age > 30:
             assigned_segments.append('Family-oriented Customer')
-            
+
+        # Holdings-aware Segments (v3.0)
+        if features.has_investments:
+            assigned_segments.append('Existing Investor')
+
+        active_loans = [l for l in features.holdings.get("loans", []) if str(l.get("loan_status", "")).lower() == "active"]
+        if active_loans:
+            assigned_segments.append('Loan Customer')
+
+        foir = features.total_emi_monthly / (features.monthly_income_avg or 1)
+        if foir >= 0.50 and features.monthly_income_avg > 0:
+            assigned_segments.append('Over-Leveraged Customer')
+        elif features.total_outstanding_debt == 0 and len(active_loans) == 0:
+            assigned_segments.append('Debt-Free Customer')
+
+        if income >= 600000 and not features.has_insurance:
+            assigned_segments.append('Insurance Gap Prospect')
+
         if not assigned_segments:
             assigned_segments.append('Standard Customer')
             
