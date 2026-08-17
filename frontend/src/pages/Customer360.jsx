@@ -10,6 +10,7 @@ import {
   Send,
   MapPin,
   Mail,
+  MessageSquare,
   Phone,
   CheckCircle2,
   AlertTriangle,
@@ -20,7 +21,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import OfferSuccessModal from '../components/OfferSuccessModal';
-import { analyzeCustomer, createCampaign } from '../services/api';
+import { analyzeCustomer, createCampaign, generatePersonalisedMessage } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function Customer360({ customer, onBack, onNavigateCampaigns }) {
@@ -30,6 +31,15 @@ export default function Customer360({ customer, onBack, onNavigateCampaigns }) {
   const [error, setError]               = useState('');
   const [isOfferModalOpen, setIsOfferModalOpen] = useState(false);
   const [isSendingOffer, setIsSendingOffer]     = useState(false);
+
+  // Personalised message draft
+  const [draftChannel, setDraftChannel]   = useState('email');
+  const [isDraftingMsg, setIsDraftingMsg] = useState(false);
+  const [draftResult, setDraftResult]     = useState(null);
+  const [draftError, setDraftError]       = useState('');
+  const [draftSubject, setDraftSubject]   = useState('');
+  const [draftBody, setDraftBody]         = useState('');
+  const [isSent, setIsSent]               = useState(false);
 
   const customerId = customer?.customer_id;
 
@@ -111,14 +121,42 @@ export default function Customer360({ customer, onBack, onNavigateCampaigns }) {
         product:          recommendedProduct,
         campaign_name:    `Personal Offer – ${displayName}`,
         description:      `AI-generated personalised offer for ${displayName} (${recommendedProduct})`,
-        channel:          'Email',
-        message_preview:  genaiMsg?.slice(0, 200) || `Exclusive ${recommendedProduct} offer`,
+        channel:          draftChannel === 'email' ? 'Email' : 'SMS',
+        message_preview:  draftSubject || genaiMsg?.slice(0, 200) || `Exclusive ${recommendedProduct} offer`,
+        message_email:    draftChannel === 'email' ? draftBody : '',
+        message_sms:      draftChannel === 'sms' ? draftBody : '',
+        customer_ids:     [customerId],
+        age_group_strategy: 'auto',
       });
     } catch (_) {
       // Non-critical: still show success modal
     } finally {
       setIsSendingOffer(false);
+      setIsSent(true);
       setIsOfferModalOpen(true);
+    }
+  };
+
+  const handleDraftMessage = async (channel) => {
+    setDraftChannel(channel);
+    setIsDraftingMsg(true);
+    setDraftError('');
+    setDraftResult(null);
+    setIsSent(false);
+    try {
+      const result = await generatePersonalisedMessage({
+        customer_id: customerId,
+        product: recommendedProduct,
+        channel,
+        age_group: 'auto',
+      });
+      setDraftResult(result);
+      setDraftSubject(result.subject || '');
+      setDraftBody(result.body || '');
+    } catch (err) {
+      setDraftError(err.message || 'Failed to generate message');
+    } finally {
+      setIsDraftingMsg(false);
     }
   };
 
@@ -396,6 +434,155 @@ export default function Customer360({ customer, onBack, onNavigateCampaigns }) {
         </div>
       )}
 
+      {/* ── PERSONALISED MESSAGE DRAFT PANEL ─────────────────────────────────── */}
+      {analysis && !loading && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+          <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center shadow-sm">
+                <Sparkles className="w-4 h-4 text-white" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">Draft Personalised Message</h3>
+                <p className="text-xs text-slate-500">Groq AI drafts a message tuned to {displayName}'s age & profile</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handleDraftMessage('email')}
+                disabled={isDraftingMsg}
+                className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                  draftChannel === 'email' && draftResult
+                    ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                    : 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'
+                } disabled:opacity-60`}
+              >
+                <Mail className="w-3.5 h-3.5" />
+                {isDraftingMsg && draftChannel === 'email' ? (
+                  <span className="flex items-center gap-1"><RefreshCw className="w-3 h-3 animate-spin" /> Drafting…</span>
+                ) : '📧 Draft Email'}
+              </button>
+              <button
+                onClick={() => handleDraftMessage('sms')}
+                disabled={isDraftingMsg}
+                className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                  draftChannel === 'sms' && draftResult
+                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                    : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                } disabled:opacity-60`}
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                {isDraftingMsg && draftChannel === 'sms' ? (
+                  <span className="flex items-center gap-1"><RefreshCw className="w-3 h-3 animate-spin" /> Drafting…</span>
+                ) : '📱 Draft SMS'}
+              </button>
+            </div>
+          </div>
+
+          <div className="p-5 space-y-4">
+            {draftError && (
+              <div className="p-3 bg-red-50 text-red-700 text-xs font-semibold rounded-lg border border-red-200 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />{draftError}
+              </div>
+            )}
+
+            {isDraftingMsg && (
+              <div className="flex flex-col items-center justify-center py-8 space-y-3">
+                <div className="flex space-x-2">
+                  <div className="w-2.5 h-2.5 bg-purple-600 rounded-full animate-bounce [animation-delay:-0.3s]" />
+                  <div className="w-2.5 h-2.5 bg-purple-600 rounded-full animate-bounce [animation-delay:-0.15s]" />
+                  <div className="w-2.5 h-2.5 bg-purple-600 rounded-full animate-bounce" />
+                </div>
+                <p className="text-sm font-bold text-purple-700">Groq AI is crafting a personalised {draftChannel} for {displayName.split(' ')[0]}…</p>
+                <p className="text-xs text-slate-500">Analyzing age profile, portfolio gaps, and behavioral triggers</p>
+              </div>
+            )}
+
+            {draftResult && !isDraftingMsg && (
+              <div className="space-y-4 animate-in fade-in duration-500">
+                {/* Strategy badge */}
+                <div className="flex flex-wrap items-center gap-2">
+                  {(() => {
+                    const ageColors = {
+                      genz: 'bg-pink-50 text-pink-700 border-pink-200',
+                      millennial: 'bg-purple-50 text-purple-700 border-purple-200',
+                      genx: 'bg-blue-50 text-blue-700 border-blue-200',
+                      boomer: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                    };
+                    const ageLabel = { genz: 'Gen Z', millennial: 'Millennial', genx: 'Gen X', boomer: 'Boomer' };
+                    return (
+                      <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${ageColors[draftResult.age_group] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
+                        {ageLabel[draftResult.age_group] || draftResult.age_group} • {draftResult.age}y
+                      </span>
+                    );
+                  })()}
+                  <span className="text-xs text-slate-500 italic">{draftResult.strategy_used}</span>
+                </div>
+
+                {/* Subject / Header */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wider">{draftChannel === 'email' ? 'Subject Line' : 'SMS Header'}</label>
+                  <input
+                    type="text"
+                    value={draftSubject}
+                    onChange={(e) => setDraftSubject(e.target.value)}
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
+                  />
+                </div>
+
+                {/* Body */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wider">{draftChannel === 'email' ? 'Email Body' : 'SMS Text'}</label>
+                  <textarea
+                    rows={draftChannel === 'email' ? 8 : 4}
+                    value={draftBody}
+                    onChange={(e) => setDraftBody(e.target.value)}
+                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 leading-relaxed focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all resize-y font-serif"
+                  />
+                  {draftChannel === 'sms' && (
+                    <p className={`text-[11px] mt-1 font-medium ${draftBody.length > 160 ? 'text-amber-600' : 'text-slate-400'}`}>
+                      {draftBody.length} / 160 characters {draftBody.length > 160 && '— will send as multi-part SMS'}
+                    </p>
+                  )}
+                </div>
+
+                {isSent ? (
+                  <div className="flex items-center gap-2 p-3 bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-200 rounded-xl">
+                    <CheckCircle2 className="w-4 h-4 shrink-0" />
+                    {draftChannel === 'email' ? 'Email' : 'SMS'} sent to {displayName} successfully! Offer recorded.
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs text-slate-400 italic">Review and edit the draft above before sending.</p>
+                    <button
+                      onClick={handleCreateOffer}
+                      disabled={isSendingOffer}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all cursor-pointer disabled:opacity-70"
+                    >
+                      {isSendingOffer ? (
+                        <><div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" /><span>Sending…</span></>
+                      ) : (
+                        <><Send className="w-3.5 h-3.5" /><span>Send {draftChannel === 'email' ? 'Email' : 'SMS'} to {displayName.split(' ')[0]}</span></>
+                      )}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!draftResult && !isDraftingMsg && !draftError && (
+              <div className="flex flex-col items-center justify-center py-10 text-center space-y-2">
+                <div className="w-12 h-12 rounded-full bg-purple-50 border border-purple-100 flex items-center justify-center">
+                  <Sparkles className="w-6 h-6 text-purple-400" />
+                </div>
+                <p className="text-sm font-semibold text-slate-500">Click "Draft Email" or "Draft SMS" to generate a personalised message for {displayName.split(' ')[0]}</p>
+                <p className="text-xs text-slate-400">Groq AI will tailor the message to their age, portfolio, city and financial profile</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <OfferSuccessModal
         isOpen={isOfferModalOpen}
         onClose={() => setIsOfferModalOpen(false)}
@@ -405,3 +592,4 @@ export default function Customer360({ customer, onBack, onNavigateCampaigns }) {
     </div>
   );
 }
+

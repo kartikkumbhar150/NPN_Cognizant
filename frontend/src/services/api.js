@@ -153,6 +153,51 @@ export const generateCampaignContent = (params) =>
 /** GET /api/analytics */
 export const getAnalytics = () => apiFetch('/api/analytics');
 
+// ── Personalised Campaign APIs ────────────────────────────────────────────────
+
+/**
+ * GET /api/campaigns/{product}/customers
+ * Returns all NBO customers for a given product (auto-population)
+ */
+export const getCampaignCustomers = (product, limit = 200) => {
+  const qs = new URLSearchParams({ limit });
+  return apiFetch(`/api/campaigns/${encodeURIComponent(product)}/customers?${qs}`);
+};
+
+/**
+ * POST /api/campaigns/generate-personalised-message
+ * Generate Groq-powered age-aware personalised email or SMS
+ * @param {Object} params - { customer_id, product, channel, age_group }
+ */
+export const generatePersonalisedMessage = (params) =>
+  apiFetch('/api/campaigns/generate-personalised-message', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+
+/**
+ * POST /api/campaigns/{id}/analytics/event
+ * Record an analytics event for a campaign
+ */
+export const recordCampaignEvent = (campaignId, event) =>
+  apiFetch(`/api/campaigns/${campaignId}/analytics/event`, {
+    method: 'POST',
+    body: JSON.stringify(event),
+  });
+
+/**
+ * GET /api/campaigns/{id}/analytics
+ * Get full analytics for a specific campaign
+ */
+export const getCampaignAnalytics = (campaignId) =>
+  apiFetch(`/api/campaigns/${campaignId}/analytics`);
+
+/**
+ * GET /api/campaigns/insights
+ * AI self-learning insights across all campaigns
+ */
+export const getCampaignInsights = () => apiFetch('/api/campaigns/insights');
+
 // ── Health ────────────────────────────────────────────────────────────────────
 
 export const healthCheck = () => apiFetch('/health');

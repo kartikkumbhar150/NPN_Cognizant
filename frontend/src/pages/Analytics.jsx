@@ -8,12 +8,14 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer,
   BarChart, Bar, Cell
 } from 'recharts';
-import { getAnalytics } from '../services/api';
+import { getAnalytics, getCampaignInsights } from '../services/api';
 
 export default function Analytics({ onNavigateCampaigns }) {
   const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
+  const [insights, setInsights]         = useState(null);
+  const [loadingInsights, setLoadingInsights] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -259,6 +261,79 @@ export default function Analytics({ onNavigateCampaigns }) {
             </table>
           </div>
         </div>
+      </div>
+
+      {/* AI Self-Learning Insights */}
+      <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-purple-950 rounded-2xl p-6 text-white border border-slate-800">
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-400/30 flex items-center justify-center">
+              <Sparkles className="w-5 h-5 text-purple-300" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-white">AI Self-Learning Insights</h3>
+              <p className="text-xs text-purple-200">Groq analyzes all campaigns and recommends improvements for next run</p>
+            </div>
+          </div>
+          <button
+            onClick={async () => {
+              setLoadingInsights(true);
+              try { const d = await getCampaignInsights(); setInsights(d); } catch (_) {}
+              finally { setLoadingInsights(false); }
+            }}
+            disabled={loadingInsights}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600/80 hover:bg-purple-600 text-white text-xs font-bold rounded-xl border border-purple-500/50 transition-colors cursor-pointer disabled:opacity-70"
+          >
+            {loadingInsights ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+            <span>{insights ? 'Refresh' : 'Generate Insights'}</span>
+          </button>
+        </div>
+
+        {loadingInsights && (
+          <div className="flex items-center gap-3 py-6 justify-center">
+            <RefreshCw className="w-5 h-5 text-purple-300 animate-spin" />
+            <p className="text-purple-200 text-sm">Groq AI is analyzing campaign performance patterns…</p>
+          </div>
+        )}
+
+        {insights && !loadingInsights && (
+          <div className="space-y-4 animate-in fade-in duration-500">
+            <div className="p-3 bg-white/10 rounded-xl border border-white/10 text-sm text-purple-100">{insights.overall_health}</div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {(insights.insights || []).map((insight, i) => {
+                const typeStyle = { warning: 'border-amber-400/30 bg-amber-500/10', success: 'border-emerald-400/30 bg-emerald-500/10', info: 'border-blue-400/30 bg-blue-500/10' };
+                const typeIcon  = { warning: '⚠️', success: '✅', info: '💡' };
+                return (
+                  <div key={i} className={`p-4 rounded-xl border ${typeStyle[insight.type] || 'border-white/10 bg-white/5'}`}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span>{typeIcon[insight.type] || '💡'}</span>
+                      <h4 className="text-xs font-bold text-white">{insight.title}</h4>
+                    </div>
+                    <p className="text-xs text-purple-200 leading-relaxed">{insight.description}</p>
+                  </div>
+                );
+              })}
+            </div>
+            {insights.top_recommendation && (
+              <div className="p-4 bg-gradient-to-r from-blue-600/40 to-purple-600/40 rounded-xl border border-blue-400/30">
+                <p className="text-xs font-bold text-blue-200 mb-1">🎯 Top Recommendation</p>
+                <p className="text-sm text-white font-semibold">{insights.top_recommendation}</p>
+              </div>
+            )}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+              {insights.best_channel && <div className="p-3 bg-white/5 rounded-xl border border-white/10"><p className="font-bold text-purple-200 mb-1">📡 Best Channel</p><p className="text-white">{insights.best_channel}</p></div>}
+              {insights.best_timing && <div className="p-3 bg-white/5 rounded-xl border border-white/10"><p className="font-bold text-purple-200 mb-1">⏰ Best Timing</p><p className="text-white">{insights.best_timing}</p></div>}
+              {insights.next_campaign_suggestion && <div className="p-3 bg-white/5 rounded-xl border border-white/10"><p className="font-bold text-purple-200 mb-1">🚀 Next Campaign</p><p className="text-white">{insights.next_campaign_suggestion}</p></div>}
+            </div>
+          </div>
+        )}
+
+        {!insights && !loadingInsights && (
+          <div className="text-center py-8 text-purple-300 text-sm">
+            <Sparkles className="w-10 h-10 mx-auto mb-3 opacity-40" />
+            <p>Click "Generate Insights" to get AI-powered recommendations based on all campaign performance.</p>
+          </div>
+        )}
       </div>
     </div>
   );

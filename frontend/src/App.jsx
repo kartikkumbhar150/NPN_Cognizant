@@ -8,6 +8,7 @@ import Customers from './pages/Customers';
 import Customer360 from './pages/Customer360';
 import Segments from './pages/Segments';
 import Campaigns from './pages/Campaigns';
+import CampaignAnalytics from './pages/CampaignAnalytics';
 import Analytics from './pages/Analytics';
 import './App.css';
 
@@ -19,6 +20,10 @@ function AppShell() {
   const [campaignProduct, setCampaignProduct] = useState('Travel Credit Card');
   const [campaignSegment, setCampaignSegment] = useState('Frequent Travellers');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+
+  // Campaign analytics drill-down
+  const [selectedCampaignId, setSelectedCampaignId]     = useState(null);
+  const [selectedCampaignName, setSelectedCampaignName] = useState('');
 
   if (!isAuthenticated) {
     return <Login />;
@@ -43,6 +48,14 @@ function AppShell() {
     if (product) setCampaignProduct(product);
     if (segment) setCampaignSegment(segment);
     setCurrentTab('campaigns');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Navigate to campaign analytics drill-down
+  const handleViewCampaignAnalytics = (campaignId, campaignName) => {
+    setSelectedCampaignId(campaignId);
+    setSelectedCampaignName(campaignName || campaignId);
+    setCurrentTab('campaign-analytics');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -110,6 +123,15 @@ function AppShell() {
               initialProduct={campaignProduct}
               initialSegment={campaignSegment}
               onNavigateAnalytics={() => handleNavigate('analytics')}
+              onViewCampaignAnalytics={(id, name) => handleViewCampaignAnalytics(id, name)}
+            />
+          )}
+
+          {currentTab === 'campaign-analytics' && selectedCampaignId && (
+            <CampaignAnalytics
+              campaignId={selectedCampaignId}
+              campaignName={selectedCampaignName}
+              onBack={() => handleNavigate('campaigns')}
             />
           )}
 
