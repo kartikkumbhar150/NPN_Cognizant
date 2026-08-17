@@ -42,7 +42,8 @@ from ai_engine.data_loader import (
     load_loan_products, 
     load_investment_products,
     load_insurance_products,
-    load_customer_holdings
+    load_customer_holdings,
+    load_customer_360_json,
 )
 from ai_engine.feature_engine import FeatureEngine
 from ai_engine.behavior_engine import BehaviorEngine
@@ -124,6 +125,7 @@ def get_engines():
         _data_cache["customers_df"]    = customers_df
         _data_cache["transactions_df"] = transactions_df
         _data_cache["holdings_data"]   = holdings_data
+        _data_cache["customer_360"]    = load_customer_360_json()
         
         # v3 Engines
         _data_cache["feature_engine"]    = FeatureEngine(transactions_df, holdings_data)
@@ -361,6 +363,7 @@ def analyze_customer(
     explain_engine    = eng["explain_engine"]
     marketing_guard   = eng["marketing_guard"]
     genai_service     = eng["genai_service"]
+    customer_360_db   = eng.get("customer_360", {})
 
     customer_row = customers_df[customers_df["customer_id"] == customer_id]
     if customer_row.empty:
@@ -434,8 +437,12 @@ def analyze_customer(
             return [serialise(i) for i in obj]
         return obj
 
+    # Fetch the prebuilt Customer 360 JSON profile
+    c360 = customer_360_db.get(customer_id, {})
+
     return serialise({
         "customer": customer_data,
+        "customer_360": c360,
         "behavior": behavior,
         "events": events,
         "segments": segments,
@@ -444,22 +451,47 @@ def analyze_customer(
         "explanation": explanation,
         "marketing_check": marketing_check,
         "genai_message": genai_msg,
+        "propensities": nbo.get("propensities", {}),
         "holdings_summary": {
-            "has_insurance": features.has_insurance,
-            "has_health_insurance": features.has_health_insurance,
-            "has_life_insurance": features.has_life_insurance,
-            "has_investments": features.has_investments,
-            "has_home_loan": features.has_home_loan,
-            "has_personal_loan": features.has_personal_loan,
-            "held_card_names": features.held_card_names,
-            "held_loan_categories": features.held_loan_categories,
-            "held_investment_categories": features.held_investment_categories,
-            "held_insurance_categories": features.held_insurance_categories,
-            "total_emi_monthly": features.total_emi_monthly,
-            "total_sip_monthly": features.total_sip_monthly,
-            "total_assets_value": features.total_assets_value,
-            "total_outstanding_debt": features.total_outstanding_debt,
-            "net_worth_indicator": features.net_worth_indicator,
+            # Basic flags
+            "has_credit_card":        features.has_credit_card,
+            "has_insurance":          features.has_insurance,
+            "has_health_insurance":   features.has_health_insurance,
+            "has_life_insurance":     features.has_life_insurance,
+            "has_travel_insurance":   features.has_travel_insurance,
+            "has_motor_insurance":    features.has_motor_insurance,
+            "has_home_insurance":     features.has_home_insurance,
+            "has_investments":        features.has_investments,
+            "has_sip":                features.has_sip,
+            "has_mutual_fund":        features.has_mutual_fund,
+            "has_stocks":             features.has_stocks,
+            "has_bonds":              features.has_bonds,
+            "has_nps":                features.has_nps,
+            "has_demat":              features.has_demat,
+            "has_etf":                features.has_etf,
+            "has_wealth_management":  features.has_wealth_management,
+            "has_private_banking":    features.has_private_banking,
+            "has_home_loan":          features.has_home_loan,
+            "has_personal_loan":      features.has_personal_loan,
+            "has_vehicle_loan":       features.has_vehicle_loan,
+            "has_education_loan":     features.has_education_loan,
+            "has_agriculture_loan":   features.has_agriculture_loan,
+            "has_business_loan":      features.has_business_loan,
+            "has_deposits":           features.has_deposits,
+            # Held names and categories
+            "held_card_names":              features.held_card_names,
+            "held_loan_categories":         features.held_loan_categories,
+            "held_investment_categories":   features.held_investment_categories,
+            "held_insurance_categories":    features.held_insurance_categories,
+            # Aggregates
+            "total_emi_monthly":         features.total_emi_monthly,
+            "total_sip_monthly":         features.total_sip_monthly,
+            "total_assets_value":        features.total_assets_value,
+            "total_outstanding_debt":    features.total_outstanding_debt,
+            "net_worth_indicator":       features.net_worth_indicator,
+            "total_insurance_cover":     features.total_insurance_cover,
+            "total_credit_limit":        features.total_credit_limit,
+            "total_credit_outstanding":  features.total_credit_outstanding,
         },
     })
 
@@ -846,7 +878,7 @@ OUTPUT: Return valid JSON with exactly these fields:
                     {"role": "system", "content": "You are a banking marketing API. Return only valid JSON."},
                     {"role": "user", "content": prompt},
                 ],
-                model="llama-3.1-70b-versatile",
+                model="qwen/qwen3.6-27b",
                 temperature=0.7,
                 max_tokens=600,
                 response_format={"type": "json_object"}
@@ -1112,7 +1144,7 @@ Return valid JSON:
                     {"role": "system", "content": "You are a banking marketing analytics AI. Return only valid JSON."},
                     {"role": "user", "content": prompt},
                 ],
-                model="llama-3.1-70b-versatile",
+                model="qwen/qwen3.6-27b",
                 temperature=0.3,
                 max_tokens=800,
                 response_format={"type": "json_object"}

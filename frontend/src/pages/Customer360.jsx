@@ -98,6 +98,16 @@ export default function Customer360({ customer, onBack, onNavigateCampaigns }) {
   const savingsRate  = financial?.spending_profile?.savings_rate || 0;
   const savingsBalance = financial?.spending_profile?.monthly_savings || 0;
 
+  // Holdings from analysis
+  const holdings     = analysis?.holdings_summary || {};
+  const c360         = analysis?.customer_360 || {};
+  // C360 JSON has holdings directly on the profile object (not nested under 'holdings')
+  const c360Holdings = c360;
+  const c360Personal = c360.personal_profile || {};
+  const c360Employment = c360.employment_and_income || {};
+  const c360Banking  = c360.banking_relationship || {};
+  const c360Summary  = c360.financial_summary || {};
+
   // Behavior patterns
   const behaviourPatterns = behavior?.category_spend
     ? Object.entries(behavior.category_spend)
@@ -207,12 +217,12 @@ export default function Customer360({ customer, onBack, onNavigateCampaigns }) {
             <div className="space-y-1">
               <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">{displayName}</h2>
               <span className="px-2 py-0.5 text-[11px] font-bold rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                {customer.employment_type || 'Active'}
+                {c360Banking.customer_segment_type || customer.customer_segment_type || 'Active'}
               </span>
-              <p className="text-xs font-medium text-slate-600">{customer.employment_type || '—'}</p>
+              <p className="text-xs font-medium text-slate-600">{c360Employment.occupation || customer.employment_type || '—'}</p>
               <div className="flex flex-col gap-1 text-xs text-slate-500 pt-1">
-                <span className="flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5 text-slate-400" />{customer.city || '—'}</span>
-                <span className="flex items-center gap-1.5"><Mail className="w-3.5 h-3.5 text-slate-400" />{customer.email || '—'}</span>
+                <span className="flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5 text-slate-400" />{c360Personal.city || customer.city || '—'}, {c360Personal.state || customer.state || ''}</span>
+                <span className="flex items-center gap-1.5"><Mail className="w-3.5 h-3.5 text-slate-400" />{c360Personal.email || customer.email || '—'}</span>
               </div>
             </div>
           </div>
@@ -220,8 +230,8 @@ export default function Customer360({ customer, onBack, onNavigateCampaigns }) {
           <div className="lg:col-span-8 grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 rounded-xl p-4 border border-slate-200/80">
             <div className="space-y-1">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Segment</span>
-              <p className="text-xs sm:text-sm font-bold text-slate-800 truncate">{segments[0] || customer.customer_segment_type || 'Standard'}</p>
-              <span className="text-[10px] text-blue-600 font-medium">AI-Clustered</span>
+              <p className="text-xs sm:text-sm font-bold text-slate-800 truncate">{segments[0] || c360Banking.customer_segment_type || customer.customer_segment_type || 'Standard'}</p>
+              <span className="text-[10px] text-blue-600 font-medium">{c360Banking.risk_profile ? `Risk: ${c360Banking.risk_profile}` : 'AI-Clustered'}</span>
             </div>
             <div className="space-y-1">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Monthly Spend</span>
@@ -233,18 +243,18 @@ export default function Customer360({ customer, onBack, onNavigateCampaigns }) {
             <div className="space-y-1">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Credit Health</span>
               <p className={`text-xs sm:text-sm font-bold ${creditScore >= 750 ? 'text-emerald-600' : creditScore >= 650 ? 'text-blue-600' : 'text-amber-600'}`}>
-                {creditScore} CIBIL
+                {c360Banking.credit_score || creditScore} CIBIL
               </p>
               <span className="text-[10px] text-slate-500">
-                {creditScore >= 750 ? 'Tier 1 Prime' : creditScore >= 650 ? 'Tier 2' : 'Tier 3'}
+                {(c360Banking.credit_score||creditScore) >= 750 ? 'Tier 1 Prime' : (c360Banking.credit_score||creditScore) >= 650 ? 'Tier 2' : 'Tier 3'}
               </span>
             </div>
             <div className="space-y-1">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Annual Income</span>
               <p className="text-xs sm:text-sm font-bold text-slate-900">
-                ₹{(annualIncome / 100000).toFixed(1)}L
+                ₹{((c360Employment.annual_income||annualIncome) / 100000).toFixed(1)}L
               </p>
-              <span className="text-[10px] text-slate-500">Age: {customer.age || '—'}</span>
+              <span className="text-[10px] text-slate-500">{c360Employment.income_range || `Age: ${c360Personal.age || customer.age || '—'}`}</span>
             </div>
           </div>
         </div>
@@ -332,6 +342,130 @@ export default function Customer360({ customer, onBack, onNavigateCampaigns }) {
                 >
                   Dispatch Instant Offer
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+
+      {/* ── HOLDINGS PORTFOLIO PANEL ─────────────────────────────────────── */}
+      {analysis && !loading && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center">
+              <Briefcase className="w-4 h-4 text-blue-600" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-900">Customer 360 — Product Holdings</h3>
+              <p className="text-xs text-slate-400">All active products owned by this customer</p>
+            </div>
+          </div>
+          <div className="p-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+
+            {/* Accounts */}
+            {(c360Holdings.accounts?.length > 0) && (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-2">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Accounts ({c360Holdings.accounts.length})</p>
+                {c360Holdings.accounts.map((a, i) => (
+                  <div key={i} className="flex justify-between text-xs">
+                    <span className="font-semibold text-slate-700">{a.account_type}</span>
+                    <span className="text-slate-500 font-mono">₹{Number(a.average_monthly_balance||0).toLocaleString('en-IN', {maximumFractionDigits:0})}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Credit Cards */}
+            {(c360Holdings.credit_cards?.length > 0) && (
+              <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-2">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-blue-600">Credit Cards ({c360Holdings.credit_cards.length})</p>
+                {c360Holdings.credit_cards.map((cc, i) => (
+                  <div key={i} className="flex justify-between text-xs">
+                    <span className="font-semibold text-slate-800">{cc.card_name}</span>
+                    <span className="text-blue-700 font-mono">₹{Number(cc.credit_limit||0).toLocaleString('en-IN', {maximumFractionDigits:0})}</span>
+                  </div>
+                ))}
+                <p className="text-[11px] text-blue-600 font-medium">Total Limit: ₹{Number(holdings.total_credit_limit||0).toLocaleString('en-IN', {maximumFractionDigits:0})}</p>
+              </div>
+            )}
+
+            {/* Loans */}
+            {(c360Holdings.loans?.length > 0) && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-2">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-amber-700">Active Loans ({c360Holdings.loans.length})</p>
+                {c360Holdings.loans.map((l, i) => (
+                  <div key={i} className="flex justify-between text-xs">
+                    <span className="font-semibold text-slate-800">{l.loan_category}</span>
+                    <span className="text-amber-700 font-mono">EMI ₹{Number(l.emi_amount||0).toLocaleString('en-IN', {maximumFractionDigits:0})}</span>
+                  </div>
+                ))}
+                <p className="text-[11px] text-amber-700 font-medium">Total Outstanding: ₹{Number(holdings.total_outstanding_debt||0).toLocaleString('en-IN', {maximumFractionDigits:0})}</p>
+              </div>
+            )}
+
+            {/* Investments */}
+            {(c360Holdings.investments?.length > 0) && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 space-y-2">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">Investments ({c360Holdings.investments.length})</p>
+                {c360Holdings.investments.slice(0, 4).map((inv, i) => (
+                  <div key={i} className="flex justify-between text-xs">
+                    <span className="font-semibold text-slate-800">{inv.investment_category}</span>
+                    <span className="text-emerald-700 font-mono">₹{Number(inv.current_value||0).toLocaleString('en-IN', {maximumFractionDigits:0})}</span>
+                  </div>
+                ))}
+                {c360Holdings.investments.length > 4 && <p className="text-[11px] text-emerald-600">+{c360Holdings.investments.length - 4} more</p>}
+                <p className="text-[11px] text-emerald-700 font-medium">Total Value: ₹{Number(holdings.total_assets_value||0).toLocaleString('en-IN', {maximumFractionDigits:0})}</p>
+              </div>
+            )}
+
+            {/* Deposits */}
+            {(c360Holdings.deposits?.length > 0) && (
+              <div className="rounded-xl border border-purple-200 bg-purple-50 p-4 space-y-2">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-purple-700">Deposits ({c360Holdings.deposits.length})</p>
+                {c360Holdings.deposits.map((d, i) => (
+                  <div key={i} className="flex justify-between text-xs">
+                    <span className="font-semibold text-slate-800">{d.deposit_type}</span>
+                    <span className="text-purple-700 font-mono">₹{Number(d.principal_amount||0).toLocaleString('en-IN', {maximumFractionDigits:0})}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Insurance */}
+            {(c360Holdings.insurance?.length > 0) && (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 space-y-2">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-rose-700">Insurance ({c360Holdings.insurance.length})</p>
+                {c360Holdings.insurance.map((ins, i) => (
+                  <div key={i} className="flex justify-between text-xs">
+                    <span className="font-semibold text-slate-800">{ins.insurance_type || ins.insurance_category}</span>
+                    <span className="text-rose-700 font-mono">₹{Number(ins.sum_insured||0).toLocaleString('en-IN', {maximumFractionDigits:0})}</span>
+                  </div>
+                ))}
+                <p className="text-[11px] text-rose-700 font-medium">Total Cover: ₹{Number(holdings.total_insurance_cover||0).toLocaleString('en-IN', {maximumFractionDigits:0})}</p>
+              </div>
+            )}
+
+            {/* Net Worth Summary */}
+            <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-slate-900 to-slate-800 p-4 space-y-2 text-white col-span-1">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Financial Summary</p>
+              <div className="flex justify-between text-xs">
+                <span className="text-slate-300">Total Assets</span>
+                <span className="text-emerald-400 font-bold">₹{Number(holdings.total_assets_value||0).toLocaleString('en-IN', {maximumFractionDigits:0})}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-slate-300">Total Debt</span>
+                <span className="text-rose-400 font-bold">₹{Number(holdings.total_outstanding_debt||0).toLocaleString('en-IN', {maximumFractionDigits:0})}</span>
+              </div>
+              <div className="border-t border-slate-700 mt-2 pt-2 flex justify-between text-xs">
+                <span className="text-slate-300 font-semibold">Net Worth</span>
+                <span className={`font-extrabold ${(holdings.net_worth_indicator||0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  ₹{Number(holdings.net_worth_indicator||0).toLocaleString('en-IN', {maximumFractionDigits:0})}
+                </span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-slate-300">Monthly EMI</span>
+                <span className="text-amber-400 font-bold">₹{Number(holdings.total_emi_monthly||0).toLocaleString('en-IN', {maximumFractionDigits:0})}</span>
               </div>
             </div>
           </div>

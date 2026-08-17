@@ -99,7 +99,7 @@ OUTPUT FORMAT: You MUST return valid JSON exactly matching this schema:
                             "content": prompt,
                         },
                     ],
-                    model="llama-3.1-8b-instant",
+                    model="qwen/qwen3.6-27b",
                     temperature=0.4,
                     max_tokens=300,
                     response_format={"type": "json_object"}

@@ -184,24 +184,43 @@ class CustomerFeatureSet:
     has_insurance: bool = False
     has_life_insurance: bool = False
     has_health_insurance: bool = False
+    has_travel_insurance: bool = False
+    has_motor_insurance: bool = False
+    has_home_insurance: bool = False
     has_investments: bool = False
+    has_sip: bool = False
+    has_mutual_fund: bool = False
+    has_stocks: bool = False
+    has_bonds: bool = False
+    has_nps: bool = False
+    has_demat: bool = False
+    has_etf: bool = False
+    has_wealth_management: bool = False
+    has_private_banking: bool = False
     has_home_loan: bool = False
     has_personal_loan: bool = False
     has_vehicle_loan: bool = False
     has_education_loan: bool = False
+    has_agriculture_loan: bool = False
+    has_business_loan: bool = False
+    has_gold_loan: bool = False
     has_deposits: bool = False
+    has_credit_card: bool = False
     total_emi_monthly: float = 0.0          # Sum of all active loan EMIs
     total_sip_monthly: float = 0.0          # Sum of all active SIP/investment monthly amounts
     total_assets_value: float = 0.0         # investments current_value + deposits principal
     total_outstanding_debt: float = 0.0     # Sum of all outstanding loan principals
     net_worth_indicator: float = 0.0        # total_assets_value - total_outstanding_debt
+    total_insurance_cover: float = 0.0      # Sum of all insurance sum_insured
+    total_credit_limit: float = 0.0         # Sum of all active credit card limits
+    total_credit_outstanding: float = 0.0   # Sum of all credit card outstanding
     held_insurance_categories: List[str] = field(default_factory=list)   # e.g. ["Health", "Life"]
-    held_investment_categories: List[str] = field(default_factory=list)  # e.g. ["Mutual Fund", "FD"]
+    held_investment_categories: List[str] = field(default_factory=list)  # e.g. ["SIP", "Mutual Fund"]
     held_loan_categories: List[str] = field(default_factory=list)        # e.g. ["Personal", "Home"]
     held_card_names: List[str] = field(default_factory=list)             # e.g. ["Diners Black"]
 
     # ── Feature snapshot for audit ────────────────────────────────────────────
-    feature_version: str = "2.0"
+    feature_version: str = "2.1"
 
 
 class FeatureEngine:
@@ -617,13 +636,16 @@ class FeatureEngine:
         active_loans = [l for l in loans if str(l.get("loan_status", "")).lower() == "active"]
         if active_loans:
             loan_cats = [str(l.get("loan_category", "")) for l in active_loans]
-            fs.held_loan_categories = list(set(loan_cats))
-            fs.has_home_loan = any("home" in c.lower() for c in loan_cats)
-            fs.has_personal_loan = any("personal" in c.lower() for c in loan_cats)
-            fs.has_vehicle_loan = any(c.lower() in ("vehicle", "car", "auto", "two wheeler") for c in loan_cats)
-            fs.has_education_loan = any("education" in c.lower() for c in loan_cats)
-            fs.total_emi_monthly = sum(float(l.get("emi_amount") or 0) for l in active_loans)
-            fs.total_outstanding_debt = sum(float(l.get("outstanding_principal") or 0) for l in active_loans)
+            fs.held_loan_categories    = list(set(loan_cats))
+            fs.has_home_loan           = any("home" in c.lower() for c in loan_cats)
+            fs.has_personal_loan       = any("personal" in c.lower() for c in loan_cats)
+            fs.has_vehicle_loan        = any(c.lower() in ("vehicle", "car", "auto", "two-wheeler", "two wheeler") for c in loan_cats)
+            fs.has_education_loan      = any("education" in c.lower() for c in loan_cats)
+            fs.has_agriculture_loan    = any("agriculture" in c.lower() for c in loan_cats)
+            fs.has_business_loan       = any("business" in c.lower() for c in loan_cats)
+            fs.has_gold_loan           = any("gold" in c.lower() for c in loan_cats)
+            fs.total_emi_monthly       = sum(float(l.get("emi_amount") or 0) for l in active_loans)
+            fs.total_outstanding_debt  = sum(float(l.get("outstanding_principal") or 0) for l in active_loans)
 
         # ── Derive signals from investments ────────────────────────────────────
         investments = fs.holdings.get("investments", [])
@@ -632,6 +654,15 @@ class FeatureEngine:
             inv_cats = [str(i.get("investment_category", "")) for i in active_investments]
             fs.held_investment_categories = list(set(inv_cats))
             fs.has_investments = True
+            fs.has_sip           = any("sip" in c.lower() for c in inv_cats)
+            fs.has_mutual_fund   = any("mutual fund" in c.lower() for c in inv_cats)
+            fs.has_stocks        = any(c.lower() in ("stock / equity", "stock", "equity") for c in inv_cats)
+            fs.has_bonds         = any("bond" in c.lower() for c in inv_cats)
+            fs.has_nps           = any("nps" in c.lower() for c in inv_cats)
+            fs.has_demat         = any("demat" in c.lower() for c in inv_cats)
+            fs.has_etf           = any("etf" in c.lower() for c in inv_cats)
+            fs.has_wealth_management = any("wealth" in c.lower() for c in inv_cats)
+            fs.has_private_banking   = any("private" in c.lower() for c in inv_cats)
             fs.total_sip_monthly = sum(float(i.get("monthly_amount") or 0) for i in active_investments)
             fs.total_assets_value += sum(float(i.get("current_value") or 0) for i in active_investments)
 
@@ -646,17 +677,25 @@ class FeatureEngine:
         insurance = fs.holdings.get("insurance", [])
         active_insurance = [i for i in insurance if str(i.get("policy_status", "")).lower() == "active"]
         if active_insurance:
-            ins_cats = [str(i.get("insurance_category", "")) for i in active_insurance]
-            fs.held_insurance_categories = list(set(ins_cats))
-            fs.has_insurance = True
-            fs.has_life_insurance = any(c.lower() in ("life", "term", "ulip") for c in ins_cats)
-            fs.has_health_insurance = any(c.lower() in ("health", "medical") for c in ins_cats)
+            # Use insurance_type (new schema) with fallback to insurance_category (old schema)
+            ins_types = [str(i.get("insurance_type") or i.get("insurance_category") or "") for i in active_insurance]
+            fs.held_insurance_categories = list(set(ins_types))
+            fs.has_insurance         = True
+            fs.has_life_insurance    = any(t.lower() in ("life", "term", "ulip") for t in ins_types)
+            fs.has_health_insurance  = any(t.lower() in ("health", "medical") for t in ins_types)
+            fs.has_travel_insurance  = any(t.lower() == "travel" for t in ins_types)
+            fs.has_motor_insurance   = any(t.lower() == "motor" for t in ins_types)
+            fs.has_home_insurance    = any(t.lower() == "home" for t in ins_types)
+            fs.total_insurance_cover = sum(float(i.get("sum_insured") or 0) for i in active_insurance)
 
         # ── Derive signals from credit cards ───────────────────────────────────
         credit_cards = fs.holdings.get("credit_cards", [])
         active_cards = [c for c in credit_cards if str(c.get("card_status", "")).lower() == "active"]
         if active_cards:
-            fs.held_card_names = [str(c.get("card_name", "")) for c in active_cards]
+            fs.has_credit_card     = True
+            fs.held_card_names     = [str(c.get("card_name", "")) for c in active_cards]
+            fs.total_credit_limit  = sum(float(c.get("credit_limit") or 0) for c in active_cards)
+            fs.total_credit_outstanding = sum(float(c.get("current_outstanding") or 0) for c in active_cards)
 
         # ── Net worth indicator ────────────────────────────────────────────────
         fs.net_worth_indicator = fs.total_assets_value - fs.total_outstanding_debt
