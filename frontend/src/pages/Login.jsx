@@ -43,7 +43,7 @@ export default function Login() {
             <Sparkles className="w-3 h-3" />
             <span>Employee Marketing Intelligence Portal</span>
           </div>
-          <p className="text-slate-400 text-sm mt-2">Sign in to access the BankAI Dashboard</p>
+          <p className="text-slate-400 text-sm mt-2">Sign in to access the Prism Dashboard</p>
         </div>
 
         {/* Login card */}

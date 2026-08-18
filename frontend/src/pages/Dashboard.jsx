@@ -140,41 +140,7 @@ export default function Dashboard({ onNavigate, onSelectCustomer, onStartCampaig
 
   return (
     <div className="space-y-6 pb-8">
-      {/* Top Banner */}
-      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-950 rounded-2xl p-6 text-white shadow-sm border border-slate-800 relative overflow-hidden">
-        <div className="absolute right-0 top-0 bottom-0 w-1/3 bg-gradient-to-l from-blue-500/10 via-purple-500/10 to-transparent pointer-events-none" />
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div className="space-y-1.5 max-w-2xl">
-            <div className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-purple-500/20 border border-purple-400/30 text-purple-300 text-xs font-semibold">
-              <Sparkles className="w-3.5 h-3.5 text-purple-300" />
-              <span>Cognizant AI Marketing Engine • Live Intelligence</span>
-            </div>
-            <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-white">
-              {totalCustomers.toLocaleString()} Customer Portfolios Analysed
-            </h2>
-            <p className="text-slate-300 text-xs sm:text-sm leading-relaxed">
-              BankAI evaluated all retail customer portfolios via Supabase. Deploying recommended personalized offers
-              is projected to generate <strong className="text-emerald-400 font-semibold">significant revenue growth</strong>.
-            </p>
-          </div>
-          <div className="flex items-center space-x-3 shrink-0">
-            <button
-              onClick={() => onNavigate('campaigns')}
-              className="inline-flex items-center space-x-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs sm:text-sm font-semibold shadow-md shadow-blue-900/30 transition-all cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Create Campaign</span>
-            </button>
-            <button
-              onClick={() => onNavigate('analytics')}
-              className="inline-flex items-center space-x-2 px-3.5 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs sm:text-sm font-medium border border-white/15 transition-colors cursor-pointer"
-            >
-              <span>View Analytics</span>
-              <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
-      </div>
+
 
       {/* 4 KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

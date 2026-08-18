@@ -22,7 +22,7 @@ export default function OfferSuccessModal({ isOpen, onClose, customer, onNavigat
 
           <h3 className="text-xl font-bold">Personalized Offer Dispatched</h3>
           <p className="text-blue-100 text-xs mt-1">
-            BankAI Propensity Rule Triggered & Pre-Approved
+            Prism Propensity Rule Triggered & Pre-Approved
           </p>
         </div>
 

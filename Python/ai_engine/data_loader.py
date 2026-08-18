@@ -98,7 +98,10 @@ def load_customer_360_json() -> dict:
     if os.path.exists(json_path):
         try:
             with open(json_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                data = json.load(f)
+                if isinstance(data, list):
+                    return {item.get("customer_id"): item for item in data if "customer_id" in item}
+                return data
         except Exception as e:
             print(f"WARNING: Could not load customer_360.json: {e}")
     return {}

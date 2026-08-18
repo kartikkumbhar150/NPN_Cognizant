@@ -49,7 +49,7 @@ export default function CampaignSuccessModal({ isOpen, onClose, campaignData, on
               <span className="text-xs text-slate-500 font-medium">Execution Engine</span>
               <span className="text-xs font-semibold text-purple-700 flex items-center gap-1">
                 <Sparkles className="w-3.5 h-3.5 text-purple-600" />
-                BankAI Smart Batch Dispatcher
+                Prism Smart Batch Dispatcher
               </span>
             </div>
           </div>

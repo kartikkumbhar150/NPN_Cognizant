@@ -46,7 +46,7 @@ export default function Segments({ onSelectSegmentFilter, onStartCampaign }) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
         <div className="w-10 h-10 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin" />
-        <p className="text-sm text-slate-500 font-medium">BankAI is computing segment statistics…</p>
+        <p className="text-sm text-slate-500 font-medium">Prism is computing segment statistics…</p>
       </div>
     );
   }
@@ -75,7 +75,7 @@ export default function Segments({ onSelectSegmentFilter, onStartCampaign }) {
         <div className="relative z-10 max-w-3xl space-y-3">
           <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-white/10 text-purple-200 border border-white/15 text-xs font-semibold">
             <Sparkles className="w-3.5 h-3.5 text-purple-300" />
-            <span>BankAI Behavioral Clustering</span>
+            <span>Prism Behavioral Clustering</span>
           </div>
           <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
             Micro-Segmentation Engine

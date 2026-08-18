@@ -109,17 +109,30 @@ CAMPAIGN_ANALYTICS: dict = {}
 
 # ── Lazy-loaded data / engines ────────────────────────────────────────────────
 _data_cache = {}
+_engine_lock = __import__('threading').Lock()
 
 def get_engines():
-    """Lazily load data and initialise engines (cached after first call)."""
-    if not _data_cache:
+    """Lazily load data and initialise engines (cached after first call, thread-safe)."""
+    if _data_cache:
+        return _data_cache
+    with _engine_lock:
+        # Double-check inside lock in case another thread beat us here
+        if _data_cache:
+            return _data_cache
         print("Loading data and initialising AI engines v3.0...")
+        print("- load_customers...")
         customers_df    = load_customers()
+        print("- load_transactions...")
         transactions_df = load_transactions()
+        print("- load_credit_cards...")
         credit_cards_df = load_credit_cards()
+        print("- load_loan_products...")
         loans_df        = load_loan_products()
+        print("- load_investment_products...")
         investments_df  = load_investment_products()
+        print("- load_insurance_products...")
         insurance_df    = load_insurance_products()
+        print("- load_customer_holdings...")
         holdings_data   = load_customer_holdings()
 
         _data_cache["customers_df"]    = customers_df
@@ -127,17 +140,27 @@ def get_engines():
         _data_cache["holdings_data"]   = holdings_data
         _data_cache["customer_360"]    = load_customer_360_json()
         
-        # v3 Engines
+        print("- Initialising v3 Engines...")
+        print("  - FeatureEngine...")
         _data_cache["feature_engine"]    = FeatureEngine(transactions_df, holdings_data)
+        print("  - BehaviorEngine...")
         _data_cache["behavior_engine"]   = BehaviorEngine(transactions_df)
+        print("  - EventEngine...")
         _data_cache["event_engine"]      = EventEngine(transactions_df)
+        print("  - SegmentationEngine...")
         _data_cache["seg_engine"]        = SegmentationEngine()
+        print("  - FinancialAnalyst...")
         _data_cache["financial_analyst"] = FinancialAnalyst()
+        print("  - NBOEngine...")
         _data_cache["nbo_engine"]        = NBOEngine(credit_cards_df, loans_df, investments_df, insurance_df)
+        print("  - ExplainabilityEngine...")
         _data_cache["explain_engine"]    = ExplainabilityEngine()
+        print("  - MarketingGuard...")
         _data_cache["marketing_guard"]   = MarketingGuard()
+        print("  - GenAIService...")
         _data_cache["genai_service"]     = GenAIService()
         
+        print("Engines ready.")
         print("Engines ready.")
     return _data_cache
 
@@ -264,11 +287,9 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
 def get_dashboard_stats(current_employee=Depends(get_current_employee)):
     """
     Returns aggregate statistics for the dashboard.
+    Fetches directly from the database - no AI engine required.
     """
-    eng = get_engines()
-    customers_df = eng["customers_df"]
-    seg_engine   = eng["seg_engine"]
-    feature_engine = eng["feature_engine"]
+    customers_df = load_customers()
 
     total_customers = len(customers_df)
 
@@ -283,14 +304,11 @@ def get_dashboard_stats(current_employee=Depends(get_current_employee)):
         bucket = income_bucket(row.get("annual_income", 0))
         income_dist[bucket] = income_dist.get(bucket, 0) + 1
 
-    sample = customers_df.head(200)
+    # Use customer_segment_type column directly - no AI engine needed
     segment_dist = {}
-    for _, row in sample.iterrows():
-        cust_data = row.to_dict()
-        features = feature_engine.compute(row["customer_id"], cust_data)
-        segs = seg_engine.segment_customer(cust_data, features)
-        for s in segs:
-            segment_dist[s] = segment_dist.get(s, 0) + 1
+    if "customer_segment_type" in customers_df.columns:
+        for val in customers_df["customer_segment_type"].dropna():
+            segment_dist[str(val)] = segment_dist.get(str(val), 0) + 1
 
     credit_avg = round(float(customers_df["credit_score"].mean()), 0) if "credit_score" in customers_df.columns else 0
 
@@ -317,8 +335,7 @@ def list_customers(
     current_employee=Depends(get_current_employee),
 ):
     """List all customers with basic info. Supports search by name/ID."""
-    eng = get_engines()
-    customers_df = eng["customers_df"]
+    customers_df = load_customers()
 
     cols = ["customer_id", "first_name", "last_name", "annual_income",
             "credit_score", "age", "employment_type", "customer_segment_type",
@@ -1228,44 +1245,27 @@ SEGMENT_DEFINITIONS = [
 
 @app.get("/api/segments", tags=["Segments"])
 def get_segments(current_employee=Depends(get_current_employee)):
-    eng = get_engines()
-    customers_df    = eng["customers_df"]
-    feature_engine  = eng["feature_engine"]
-    seg_engine      = eng["seg_engine"]
-
-    sample = customers_df.head(500)
-    total_sampled = len(sample)
+    """List segments using customer_segment_type directly from DB - no AI engine needed."""
+    customers_df = load_customers()
     total_customers = len(customers_df)
 
+    # Count customers per segment directly from the stored column
     seg_counts: dict = {s["name"]: 0 for s in SEGMENT_DEFINITIONS}
-    seg_income_sum:  dict = {s["name"]: 0.0 for s in SEGMENT_DEFINITIONS}
-    seg_spend_sum:   dict = {s["name"]: 0.0 for s in SEGMENT_DEFINITIONS}
+    seg_income_sum: dict = {s["name"]: 0.0 for s in SEGMENT_DEFINITIONS}
 
-    for _, row in sample.iterrows():
-        cust_data = row.to_dict()
-        features = feature_engine.compute(row["customer_id"], cust_data)
-        engine_segs = seg_engine.segment_customer(cust_data, features)
+    if "customer_segment_type" in customers_df.columns:
+        for _, row in customers_df.iterrows():
+            seg_name = str(row.get("customer_segment_type", ""))
+            if seg_name in seg_counts:
+                seg_counts[seg_name] += 1
+                seg_income_sum[seg_name] += float(row.get("annual_income", 0) or 0)
 
-        matched = False
-        for seg_def in SEGMENT_DEFINITIONS:
-            if any(es in engine_segs for es in seg_def["engine_names"]):
-                seg_counts[seg_def["name"]] += 1
-                income = features.monthly_income_avg * 12
-                spend  = features.monthly_spend_avg_90d * 12
-                seg_income_sum[seg_def["name"]] += float(income)
-                seg_spend_sum[seg_def["name"]]  += float(spend)
-                matched = True
-                break
-        if not matched:
-            seg_counts["Churn Risk"] += 1
-
-    scale = total_customers / total_sampled if total_sampled > 0 else 1
+    matched_total = sum(seg_counts.values()) or 1
 
     result = []
     for seg_def in SEGMENT_DEFINITIONS:
-        count = int(seg_counts[seg_def["name"]] * scale)
-        raw_avg_spend = (seg_spend_sum[seg_def["name"]] / max(seg_counts[seg_def["name"]], 1)) / 12
-        avg_spend_monthly = round(raw_avg_spend, 0)
+        count = seg_counts[seg_def["name"]]
+        avg_income_monthly = (seg_income_sum[seg_def["name"]] / max(seg_counts[seg_def["name"]], 1)) / 12
         percentage = round(count / total_customers * 100, 1) if total_customers > 0 else 0
 
         result.append({
@@ -1273,8 +1273,8 @@ def get_segments(current_employee=Depends(get_current_employee)):
             "name":               seg_def["name"],
             "count":              count,
             "percentage":         percentage,
-            "avgSpending":        f"₹{avg_spend_monthly:,.0f}",
-            "avgSpendingRaw":     avg_spend_monthly,
+            "avgSpending":        f"Rs{avg_income_monthly:,.0f}",
+            "avgSpendingRaw":     avg_income_monthly,
             "recommendedProduct": seg_def["recommendedProduct"],
             "aiOpportunity":      seg_def["aiOpportunity"],
             "color":              seg_def["color"],

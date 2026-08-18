@@ -1,48 +1,48 @@
 import React from 'react';
-import { Sparkles, Menu, PlusCircle, Bell, Search, TrendingUp } from 'lucide-react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { Menu, PlusCircle } from 'lucide-react';
 
-export default function Header({ currentTab, onNavigate, onOpenMobileMenu }) {
-  const getPageMeta = (tab) => {
-    switch (tab) {
-      case 'dashboard':
-        return {
-          title: 'Marketing Intelligence Dashboard',
-          subtitle: 'Real-time customer segmentation, AI opportunities & next best offers',
-        };
-      case 'customers':
-        return {
-          title: 'Customer Directory & Propensity',
-          subtitle: 'Search, filter, and inspect bank customers with AI recommendation scores',
-        };
-      case 'customer360':
-        return {
-          title: 'Customer 360° Profile',
-          subtitle: 'In-depth transaction telemetry, behavioral patterns & personalized offer triggers',
-        };
-      case 'segments':
-        return {
-          title: 'Customer Segments & Opportunity Matrix',
-          subtitle: 'Behavioral micro-clusters, average spending velocity & conversion metrics',
-        };
-      case 'campaigns':
-        return {
-          title: 'AI Campaign Orchestrator',
-          subtitle: '5-Step campaign wizard with contextual AI copy generation and multi-channel preview',
-        };
-      case 'analytics':
-        return {
-          title: 'Marketing Performance & Conversion Funnel',
-          subtitle: 'Comprehensive attribution metrics, channel conversions and product revenue lift',
-        };
-      default:
-        return {
-          title: 'BankAI Platform',
-          subtitle: 'Enterprise Marketing Intelligence',
-        };
-    }
+const PAGE_META = {
+  '/': {
+    title: 'Marketing Intelligence Dashboard',
+    subtitle: '',
+  },
+  '/customers': {
+    title: 'Customer Directory & Propensity',
+    subtitle: 'Search, filter, and inspect bank customers with AI recommendation scores',
+  },
+  '/customers/360': {
+    title: 'Customer 360° Profile',
+    subtitle: 'In-depth transaction telemetry, behavioral patterns & personalized offer triggers',
+  },
+  '/segments': {
+    title: 'Customer Segments & Opportunity Matrix',
+    subtitle: 'Behavioral micro-clusters, average spending velocity & conversion metrics',
+  },
+  '/campaigns': {
+    title: 'AI Campaign Orchestrator',
+    subtitle: '5-Step campaign wizard with contextual AI copy generation and multi-channel preview',
+  },
+  '/campaigns/analytics': {
+    title: 'Campaign Analytics',
+    subtitle: 'Real-time performance, conversions and revenue lift for this campaign',
+  },
+  '/analytics': {
+    title: 'Marketing Performance & Conversion Funnel',
+    subtitle: 'Comprehensive attribution metrics, channel conversions and product revenue lift',
+  },
+};
+
+export default function Header({ onOpenMobileMenu }) {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const meta = PAGE_META[location.pathname] || {
+    title: 'Prism Platform',
+    subtitle: 'Enterprise Marketing Intelligence',
   };
 
-  const meta = getPageMeta(currentTab);
+  const isCampaigns = location.pathname === '/campaigns';
 
   return (
     <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-xs border-b border-slate-200">
@@ -63,12 +63,6 @@ export default function Header({ currentTab, onNavigate, onOpenMobileMenu }) {
               <h1 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">
                 {meta.title}
               </h1>
-              {currentTab === 'dashboard' && (
-                <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-semibold bg-purple-50 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-full">
-                  <Sparkles className="w-3 h-3 text-purple-600" />
-                  AI Engine Live
-                </span>
-              )}
             </div>
             <p className="text-xs text-slate-500 hidden sm:block">
               {meta.subtitle}
@@ -76,19 +70,11 @@ export default function Header({ currentTab, onNavigate, onOpenMobileMenu }) {
           </div>
         </div>
 
-        {/* Right Side: Quick Action & Live Metric */}
+        {/* Right Side: Actions */}
         <div className="flex items-center space-x-2.5 sm:space-x-3 self-end md:self-auto">
-          {/* Quick AI status pill */}
-          <div className="hidden lg:flex items-center space-x-2 bg-slate-50 border border-slate-200/80 px-3 py-1.5 rounded-lg text-xs">
-            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-            <span className="text-slate-600 font-medium">Model Precision:</span>
-            <span className="font-bold text-slate-900">94.8%</span>
-          </div>
-
-          {/* Create Campaign CTA (only show when not already on campaign wizard step) */}
-          {currentTab !== 'campaigns' && (
+          {!isCampaigns && (
             <button
-              onClick={() => onNavigate('campaigns')}
+              onClick={() => navigate('/campaigns')}
               className="inline-flex items-center space-x-2 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-lg text-xs sm:text-sm font-semibold shadow-xs transition-colors cursor-pointer"
             >
               <PlusCircle className="w-4 h-4" />
@@ -96,9 +82,9 @@ export default function Header({ currentTab, onNavigate, onOpenMobileMenu }) {
             </button>
           )}
 
-          {currentTab === 'campaigns' && (
+          {isCampaigns && (
             <button
-              onClick={() => onNavigate('dashboard')}
+              onClick={() => navigate('/')}
               className="inline-flex items-center space-x-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs sm:text-sm font-medium transition-colors cursor-pointer"
             >
               <span>Back to Dashboard</span>

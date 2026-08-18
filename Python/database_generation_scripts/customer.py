@@ -739,6 +739,7 @@ def generate_base_customer(i: int):
         "country": "India",
         "pincode": pincode,
         "mobile_number": generate_phone(i),
+        "phone_number": generate_phone(i + 10000), # Generating a distinct phone number
         "email": generate_email(first_name, last_name, i),
         "customer_since": customer_since.isoformat(),
         "customer_segment_type": customer_type,

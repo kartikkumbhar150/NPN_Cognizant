@@ -223,6 +223,7 @@ export default function Customer360({ customer, onBack, onNavigateCampaigns }) {
               <div className="flex flex-col gap-1 text-xs text-slate-500 pt-1">
                 <span className="flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5 text-slate-400" />{c360Personal.city || customer.city || '—'}, {c360Personal.state || customer.state || ''}</span>
                 <span className="flex items-center gap-1.5"><Mail className="w-3.5 h-3.5 text-slate-400" />{c360Personal.email || customer.email || '—'}</span>
+                <span className="flex items-center gap-1.5"><Phone className="w-3.5 h-3.5 text-slate-400" />{c360Personal.phone_number || customer.phone_number || c360Personal.mobile_number || customer.mobile_number || '—'}</span>
               </div>
             </div>
           </div>
@@ -267,7 +268,7 @@ export default function Customer360({ customer, onBack, onNavigateCampaigns }) {
             <div className="w-6 h-6 border-2 border-purple-300/30 border-t-purple-300 rounded-full animate-spin" />
             <Sparkles className="w-5 h-5 text-purple-300" />
           </div>
-          <h3 className="text-lg font-bold">BankAI is analysing {displayName}…</h3>
+          <h3 className="text-lg font-bold">Prism is analysing {displayName}…</h3>
           <p className="text-purple-200 text-sm">Running behavior engine, segmentation, financial analysis, NBO engine and GenAI personalization. This may take a few seconds.</p>
         </div>
       )}
@@ -334,7 +335,7 @@ export default function Customer360({ customer, onBack, onNavigateCampaigns }) {
               <p className="text-xs text-purple-100 leading-relaxed line-clamp-4">{whyRecommended}</p>
               <div className="pt-2 flex flex-wrap items-center justify-between gap-3 border-t border-white/10">
                 <span className="text-[11px] text-purple-200">
-                  Model: <strong>BankAI Propensity Engine v2.4</strong>
+                  Model: <strong>Prism Propensity Engine v2.4</strong>
                 </span>
                 <button
                   onClick={handleCreateOffer}
