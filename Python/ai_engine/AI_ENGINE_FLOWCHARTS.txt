@@ -1,0 +1,157 @@
+NPN BANK AI ENGINE - FLOWCHARTS
+================================
+
+
+1. COMPLETE AI ENGINE FLOW
+--------------------------
+
+ [Customer Profile]       [Transactions]       [Existing Holdings]
+          \                    |                     /
+           \                   |                    /
+            +------------------+-------------------+
+                               |
+                               v
+                    +--------------------+
+                    |    DATA LOADER     |
+                    | Supabase / CSV data|
+                    +--------------------+
+                               |
+                               v
+                    +--------------------+
+                    |   FEATURE ENGINE   |
+                    | income, spending,  |
+                    | savings, loans,    |
+                    | investments, etc.  |
+                    +--------------------+
+                               |
+          +--------------------+---------------------+
+          |                    |                     |
+          v                    v                     v
+ +----------------+   +----------------+   +-------------------+
+ | Behaviour      |   | Event Engine   |   | Financial Analyst |
+ | Analysis       |   | travel, salary,|  | gaps and health   |
+ +----------------+   | medical, etc.  |  +-------------------+
+                      +----------------+            |
+                               |                     |
+                               +----------+----------+
+                                          |
+                                          v
+                              +-----------------------+
+                              |  ELIGIBILITY ENGINE   |
+                              | age, income, credit,  |
+                              | ownership, status     |
+                              +-----------------------+
+                                          |
+                         +----------------+----------------+
+                         |                                 |
+                         v                                 v
+              [Not eligible product]             [Eligible product]
+                                                           |
+                                                           v
+                              +-----------------------+
+                              | PRODUCT FIT ENGINE    |
+                              | matches customer need |
+                              | with product tags     |
+                              +-----------------------+
+                                          |
+                                          v
+                              +-----------------------+
+                              | NBO ENGINE            |
+                              | selects best product  |
+                              +-----------------------+
+                                          |
+                                          v
+                              +-----------------------+
+                              | EXPLAINABILITY ENGINE |
+                              | gives recommendation  |
+                              | reasons               |
+                              +-----------------------+
+                                          |
+                                          v
+                              +-----------------------+
+                              | MARKETING GUARD       |
+                              | consent, cooldown,    |
+                              | campaign fatigue      |
+                              +-----------------------+
+                                          |
+                         +----------------+----------------+
+                         |                                 |
+                         v                                 v
+                 [Marketing blocked]              [Marketing allowed]
+                                                           |
+                                                           v
+                              +-----------------------+
+                              | GENAI SERVICE         |
+                              | personalised message  |
+                              +-----------------------+
+                                          |
+                                          v
+                              [Employee Dashboard / Campaign]
+
+
+2. NEXT BEST OFFER (NBO) DECISION FLOW
+---------------------------------------
+
+ [Customer Features]       [Events]       [Financial Gaps]
+          |                   |                  |
+          +-------------------+------------------+
+                              |
+                              v
+                    [Check every bank product]
+                              |
+                              v
+                        +-------------+
+                        | Eligible?   |
+                        +-------------+
+                         |           |
+                       No|           |Yes
+                         v           v
+               [Reject product]  [Calculate product fit]
+                                         |
+                                         v
+                         [Calculate recommendation score]
+                                         |
+                                         v
+                          [Rank all eligible products]
+                                         |
+                                         v
+                           [Select highest-ranked product]
+                                         |
+                                         v
+                               [Next Best Offer]
+
+
+3. MARKETING SAFETY FLOW
+------------------------
+
+ [Next Best Offer]
+          |
+          v
+ [Does customer allow marketing?]
+          |
+      +---+---+
+      |       |
+     No      Yes
+      |       |
+      v       v
+ [Block]  [Is customer account active?]
+                 |
+             +---+---+
+             |       |
+            No      Yes
+             |       |
+             v       v
+          [Block] [Has customer received too many campaigns?]
+                          |
+                      +---+---+
+                      |       |
+                     Yes      No
+                      |       |
+                      v       v
+                   [Block] [Choose preferred channel]
+                                      |
+                                      v
+                         [Generate personalised GenAI message]
+                                      |
+                                      v
+                              [Show on dashboard / campaign]
