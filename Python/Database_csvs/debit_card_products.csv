@@ -1,9 +1,9 @@
 debit_card_product_id,product_code,card_name,card_variant,card_category,card_type,card_network,product_status,minimum_age,maximum_age,minimum_balance_required,atm_daily_limit,pos_daily_limit,online_daily_limit,international_transaction,annual_fee,created_at,updated_at
-DB001,HDFCMILL_DB,Millennia Debit Card,Millennia,Premium,Personal,Visa,Active,18,70,10000,25000,100000,100000,Yes,750,2026-08-18 00:21:22,2026-08-18 00:21:22
-DB002,HDFCPLAT_DB,Platinum Debit Card,Platinum,Premium,Personal,Visa,Active,18,70,5000,25000,75000,75000,Yes,500,2026-08-18 00:21:22,2026-08-18 00:21:22
-DB003,HDFCCLASS_DB,Classic Debit Card,Classic,Classic,Personal,Visa,Active,18,70,0,10000,25000,25000,No,150,2026-08-18 00:21:22,2026-08-18 00:21:22
-DB004,HDFCRUPAY_DB,RuPay Debit Card,Classic,Classic,Personal,RuPay,Active,18,70,0,10000,20000,20000,No,0,2026-08-18 00:21:22,2026-08-18 00:21:22
-DB005,HDFCMB_DB,MoneyBack Debit Card,MoneyBack,Classic,Personal,Visa,Active,18,70,1000,10000,25000,25000,No,250,2026-08-18 00:21:22,2026-08-18 00:21:22
-DB006,HDFCWOMEN_DB,Women's Advantage Debit Card,Women,Premium,Personal,Visa,Active,18,70,5000,25000,75000,75000,Yes,500,2026-08-18 00:21:22,2026-08-18 00:21:22
-DB007,HDFCBIZ_DB,Business Debit Card,Business,Business,Business,Visa,Active,18,70,25000,50000,200000,200000,Yes,1000,2026-08-18 00:21:22,2026-08-18 00:21:22
-DB008,HDFCTITAN_DB,Titanium Debit Card,Titanium,Classic,Personal,Mastercard,Active,18,70,2500,15000,40000,40000,No,200,2026-08-18 00:21:22,2026-08-18 00:21:22
+DB001,HDFCMILL_DB,Millennia Debit Card,Millennia,Premium,Personal,Visa,Active,18,70,10000,25000,100000,100000,Yes,750,2026-08-18 01:46:07,2026-08-18 01:46:07
+DB002,HDFCPLAT_DB,Platinum Debit Card,Platinum,Premium,Personal,Visa,Active,18,70,5000,25000,75000,75000,Yes,500,2026-08-18 01:46:07,2026-08-18 01:46:07
+DB003,HDFCCLASS_DB,Classic Debit Card,Classic,Classic,Personal,Visa,Active,18,70,0,10000,25000,25000,No,150,2026-08-18 01:46:07,2026-08-18 01:46:07
+DB004,HDFCRUPAY_DB,RuPay Debit Card,Classic,Classic,Personal,RuPay,Active,18,70,0,10000,20000,20000,No,0,2026-08-18 01:46:07,2026-08-18 01:46:07
+DB005,HDFCMB_DB,MoneyBack Debit Card,MoneyBack,Classic,Personal,Visa,Active,18,70,1000,10000,25000,25000,No,250,2026-08-18 01:46:07,2026-08-18 01:46:07
+DB006,HDFCWOMEN_DB,Women's Advantage Debit Card,Women,Premium,Personal,Visa,Active,18,70,5000,25000,75000,75000,Yes,500,2026-08-18 01:46:07,2026-08-18 01:46:07
+DB007,HDFCBIZ_DB,Business Debit Card,Business,Business,Business,Visa,Active,18,70,25000,50000,200000,200000,Yes,1000,2026-08-18 01:46:07,2026-08-18 01:46:07
+DB008,HDFCTITAN_DB,Titanium Debit Card,Titanium,Classic,Personal,Mastercard,Active,18,70,2500,15000,40000,40000,No,200,2026-08-18 01:46:07,2026-08-18 01:46:07
