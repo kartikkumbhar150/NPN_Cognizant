@@ -1,0 +1,54 @@
+{
+  "manifest_version": "1.0",
+  "corpus_name": "hdfc_banking_knowledge",
+  "created_at": "2026-08-18",
+  "description": "Curated HDFC Bank knowledge documents for RAG retrieval. General banking concepts and service descriptions.",
+  "entity_policy": "All documents must have entity='HDFC Bank'",
+  "sources": [
+    {
+      "source_id": "hdfc-neft",
+      "title": "NEFT - National Electronic Funds Transfer",
+      "category": "payments",
+      "entity": "HDFC Bank",
+      "source_url": "https://hdfc.bank.in",
+      "source_type": "project_catalogue",
+      "file": "neft.md"
+    },
+    {
+      "source_id": "hdfc-rtgs",
+      "title": "RTGS - Real Time Gross Settlement",
+      "category": "payments",
+      "entity": "HDFC Bank",
+      "source_url": "https://hdfc.bank.in",
+      "source_type": "project_catalogue",
+      "file": "rtgs.md"
+    },
+    {
+      "source_id": "hdfc-imps",
+      "title": "IMPS - Immediate Payment Service",
+      "category": "payments",
+      "entity": "HDFC Bank",
+      "source_url": "https://hdfc.bank.in",
+      "source_type": "project_catalogue",
+      "file": "imps.md"
+    },
+    {
+      "source_id": "hdfc-upi",
+      "title": "UPI - Unified Payments Interface",
+      "category": "payments",
+      "entity": "HDFC Bank",
+      "source_url": "https://hdfc.bank.in",
+      "source_type": "project_catalogue",
+      "file": "upi.md"
+    },
+    {
+      "source_id": "hdfc-kyc",
+      "title": "KYC - Know Your Customer",
+      "category": "customer_service",
+      "entity": "HDFC Bank",
+      "source_url": "https://hdfc.bank.in",
+      "source_type": "project_catalogue",
+      "file": "kyc.md"
+    }
+  ]
+}

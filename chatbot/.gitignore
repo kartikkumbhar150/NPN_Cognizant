@@ -1,0 +1,6 @@
+# Local vector-store data (created by scripts/ingest_hdfc_knowledge.py)
+.qdrant/
+
+__pycache__/
+*.pyc
+.pytest_cache/
