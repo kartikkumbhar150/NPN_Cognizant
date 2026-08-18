@@ -411,7 +411,7 @@ def analyze_customer(
 
     # 8. GenAI
     genai_msg = ""
-    if marketing_check.get("allowed"):
+    if marketing_check.get("allowed") and nbo.get("category"):
         channel = marketing_check.get("recommended_channel", "email")
         genai_msg = genai_service.generate_marketing_message(
             customer_data=customer_data,
@@ -872,7 +872,7 @@ OUTPUT: Return valid JSON with exactly these fields:
 
     if groq_client:
         try:
-            import json as _json
+            import json as _json, re as _re
             response = groq_client.chat.completions.create(
                 messages=[
                     {"role": "system", "content": "You are a banking marketing API. Return only valid JSON."},
@@ -880,10 +880,12 @@ OUTPUT: Return valid JSON with exactly these fields:
                 ],
                 model="qwen/qwen3.6-27b",
                 temperature=0.7,
-                max_tokens=600,
-                response_format={"type": "json_object"}
+                max_tokens=2000,
             )
             content = response.choices[0].message.content.strip()
+            # Strip markdown fences if present
+            content = _re.sub(r"^```(?:json)?\s*", "", content, flags=_re.MULTILINE)
+            content = _re.sub(r"```\s*$", "", content, flags=_re.MULTILINE).strip()
             parsed = _json.loads(content)
         except Exception as e:
             print(f"Personalised message generation error: {e}")
@@ -1139,6 +1141,7 @@ Return valid JSON:
 
     if not genai_service.use_mock:
         try:
+            import re as _re
             response = genai_service.client.chat.completions.create(
                 messages=[
                     {"role": "system", "content": "You are a banking marketing analytics AI. Return only valid JSON."},
@@ -1146,10 +1149,11 @@ Return valid JSON:
                 ],
                 model="qwen/qwen3.6-27b",
                 temperature=0.3,
-                max_tokens=800,
-                response_format={"type": "json_object"}
+                max_tokens=2000,
             )
             content = response.choices[0].message.content.strip()
+            content = _re.sub(r"^```(?:json)?\s*", "", content, flags=_re.MULTILINE)
+            content = _re.sub(r"```\s*$", "", content, flags=_re.MULTILINE).strip()
             return _json.loads(content)
         except Exception as e:
             print(f"Campaign insights error: {e}")

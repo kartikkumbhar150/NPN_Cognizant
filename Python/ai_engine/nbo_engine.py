@@ -64,11 +64,51 @@ class NBOEngine:
         # 1. Hard Eligibility Gate
         eligible_products = self.eligibility_engine.get_eligible(features, customer_data)
         
-        if not eligible_products:
+        # 1.5. Anti-Duplication Suppression Gate
+        # Skip products that belong to a category the customer already owns
+        filtered_products = []
+        for p in eligible_products:
+            p_type = p.get("product_type", "").lower()
+            p_data = p.get("product_data", {})
+            
+            should_suppress = False
+            
+            if p_type == "credit_card" and features.has_credit_card:
+                should_suppress = True
+            
+            elif p_type == "loan":
+                cat = str(p_data.get("loan_category", "")).lower()
+                if "personal" in cat and features.has_personal_loan: should_suppress = True
+                elif "home" in cat and features.has_home_loan: should_suppress = True
+                elif ("vehicle" in cat or "auto" in cat) and features.has_vehicle_loan: should_suppress = True
+                elif "education" in cat and features.has_education_loan: should_suppress = True
+                elif "business" in cat and features.has_business_loan: should_suppress = True
+                
+            elif p_type == "insurance":
+                cat = str(p_data.get("insurance_type", "")).lower()
+                if "life" in cat and features.has_life_insurance: should_suppress = True
+                elif "health" in cat and features.has_health_insurance: should_suppress = True
+                elif ("motor" in cat or "vehicle" in cat or "car" in cat or "bike" in cat) and features.has_motor_insurance: should_suppress = True
+                elif "home" in cat and features.has_home_insurance: should_suppress = True
+                elif "travel" in cat and features.has_travel_insurance: should_suppress = True
+                
+            elif p_type == "investment":
+                cat = str(p_data.get("investment_type", "")).lower()
+                if "mutual fund" in cat and features.has_mutual_fund: should_suppress = True
+                elif ("stock" in cat or "equity" in cat) and features.has_stocks: should_suppress = True
+                elif "bond" in cat and features.has_bonds: should_suppress = True
+                elif "nps" in cat and features.has_nps: should_suppress = True
+                elif "etf" in cat and features.has_etf: should_suppress = True
+                elif "sip" in cat and features.has_sip: should_suppress = True
+
+            if not should_suppress:
+                filtered_products.append(p)
+                
+        if not filtered_products:
             return self._empty_nbo()
 
         # 2. Product Fit Scoring (Behavioral Match)
-        fit_scored_products = self.fit_engine.score_all(eligible_products, features, events, financial_gaps)
+        fit_scored_products = self.fit_engine.score_all(filtered_products, features, events, financial_gaps)
 
         # 3. Final Weighted Ranking
         ranked_offers = self._rank_offers(fit_scored_products, features, events, financial_gaps)

@@ -126,6 +126,10 @@ class FinancialAnalyst:
         foir               = (total_emi_monthly / monthly_income) if monthly_income > 0 else 0
         marital_status     = features.profile.get("marital_status", "Single")
         age                = features.profile.get("age", 30)
+        # ── Quantitative insurance cover ──────────────────────────────────────
+        total_cover        = features.total_insurance_cover  # sum_insured across all policies
+        # Standard rule: life cover should be ≥ 10x annual income
+        recommended_cover  = annual_income * 10
         
         # Calculate percentages of income based on 90d window
         w90 = features.windows.get(90)
@@ -176,15 +180,31 @@ class FinancialAnalyst:
                 "products": ["Health Insurance"]
             })
 
-        # GAP 2c: No life insurance for married customers
-        if not has_life_ins and marital_status in ("Married",) and annual_income >= 600000:
-            gaps.append({
-                "code": "NO_LIFE_INSURANCE",
-                "severity": 8,
-                "title": "No Life Insurance — Dependents at Risk",
-                "insight": "You are married with a good income but have no life or term insurance plan. Your dependents are financially exposed.",
-                "products": ["Term Insurance", "Life Insurance"]
-            })
+        # GAP 2c: Quantitative life insurance cover gap
+        # Standard: total cover should be >= 10x annual income
+        if annual_income >= 600000:
+            if not has_life_ins:
+                gaps.append({
+                    "code": "NO_LIFE_INSURANCE",
+                    "severity": 8,
+                    "title": "No Life Insurance — Dependents at Risk",
+                    "insight": f"You earn ₹{annual_income:,.0f}/year but have no life or term insurance. Your dependents have zero financial safety net.",
+                    "products": ["Term Insurance", "Life Insurance"]
+                })
+            elif total_cover > 0 and total_cover < recommended_cover:
+                shortfall = recommended_cover - total_cover
+                cover_ratio = total_cover / recommended_cover
+                gaps.append({
+                    "code": "UNDERINSURED",
+                    "severity": 6,
+                    "title": "Underinsured — Coverage Below 10x Income",
+                    "insight": (
+                        f"Your total insurance cover is ₹{total_cover:,.0f} — only {cover_ratio*100:.0f}% of "
+                        f"the recommended ₹{recommended_cover:,.0f} (10x annual income). "
+                        f"Consider topping up by ₹{shortfall:,.0f} to fully protect your family."
+                    ),
+                    "products": ["Term Insurance", "Life Insurance"]
+                })
 
         # GAP 3: Critical savings rate
         if savings_rate < BENCHMARKS["savings_rate_critical"]:

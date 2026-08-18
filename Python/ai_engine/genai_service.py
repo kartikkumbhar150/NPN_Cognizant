@@ -1,12 +1,74 @@
 import os
 import json
 import logging
+from datetime import datetime
 from groq import Groq
 from dotenv import load_dotenv
 
-load_dotenv()  # Load variables from .env file
+load_dotenv()
 
 logger = logging.getLogger(__name__)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Time-context helpers (Zomato-style awareness)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _time_context() -> dict:
+    """Return rich time context for dynamic marketing personalisation."""
+    now   = datetime.now()
+    hour  = now.hour
+    dow   = now.strftime("%A")           # e.g. "Monday"
+    month = now.month
+
+    # Time of day bucket
+    if 5 <= hour < 12:
+        tod        = "morning"
+        tod_hook   = "Start your day with a smart financial move."
+    elif 12 <= hour < 17:
+        tod        = "afternoon"
+        tod_hook   = "A quick afternoon check-in on your finances."
+    elif 17 <= hour < 21:
+        tod        = "evening"
+        tod_hook   = "Unwind and let your money work harder for you."
+    else:
+        tod        = "night"
+        tod_hook   = "Planning for tomorrow? Here's something to consider."
+
+    # Day-of-week flavour
+    is_weekend = dow in ("Saturday", "Sunday")
+    if is_weekend:
+        day_hook = f"It's the weekend — a great time to review your finances."
+    elif dow == "Monday":
+        day_hook = "New week, new financial goals — let's make Monday count."
+    elif dow == "Friday":
+        day_hook = "It's Friday! Wrap up the week with a smart financial move."
+    else:
+        day_hook = f"Happy {dow}!"
+
+    # Season / month flavour
+    if month in (1, 2, 3):
+        season_context = "It's the start of the year — perfect for setting financial goals."
+    elif month in (3, 4):
+        season_context = "Tax season is here — great time to maximise 80C savings."
+    elif month in (6, 7, 8):
+        season_context = "Monsoon season — a quiet time to review your investments."
+    elif month in (10, 11):
+        season_context = "Festival season — reward yourself smartly with the right card."
+    else:
+        season_context = ""
+
+    return {
+        "time_of_day":      tod,
+        "day_of_week":      dow,
+        "is_weekend":       is_weekend,
+        "hour":             hour,
+        "tod_hook":         tod_hook,
+        "day_hook":         day_hook,
+        "season_context":   season_context,
+        "greeting":         f"Good {tod}, {{name}}",
+    }
+
+
 
 class GenAIService:
     def __init__(self):
@@ -18,19 +80,19 @@ class GenAIService:
 
     def generate_marketing_message(self, customer_data, nbo_result, explanation, channel="email", features=None):
         """
-        Phase 7: GenAI Personalization.
-        Uses structured explanation and outputs strict JSON.
-        LLM does NO decisioning here — it only translates reasons into a nice tone.
+        Phase 7: GenAI Personalization (v3.0 — Zomato-style time-aware messaging).
+        Uses structured explanation + rich time context for hyper-personalised copy.
+        LLM does NO decisioning here — it only translates reasons into engaging copy.
         """
         first_name = customer_data.get("first_name", "Customer")
-        product = nbo_result.get("specific_product", "our services")
-        
+        product    = nbo_result.get("specific_product", "our services")
+
         # Get customer-facing reasons from ExplainabilityEngine output
         reasons = explanation.get("customer_reasons", [])
         if not reasons:
             reasons = ["This product is well-suited to your current financial needs."]
 
-        # Build portfolio summary from features (v3.0 upgrade)
+        # Build portfolio summary from features
         portfolio_lines = []
         if features:
             if features.held_card_names:
@@ -46,20 +108,41 @@ class GenAIService:
             else:
                 portfolio_lines.append("Investments: NONE")
             if features.held_insurance_categories:
-                portfolio_lines.append(f"Insurance: {', '.join(features.held_insurance_categories)}")
+                cover_str = f" | Total cover: ₹{features.total_insurance_cover:,.0f}" if features.total_insurance_cover > 0 else ""
+                portfolio_lines.append(f"Insurance: {', '.join(features.held_insurance_categories)}{cover_str}")
             else:
                 portfolio_lines.append("Insurance: NONE")
             if features.net_worth_indicator != 0:
                 portfolio_lines.append(f"Estimated Net Worth: ₹{features.net_worth_indicator:,.0f}")
-        
+
         portfolio_context = "\n".join(portfolio_lines) if portfolio_lines else "Portfolio data not available."
 
-        # Structured constraints
-        max_words = 150 if channel == "email" else 40
-        format_instructions = "1 subject line, 1 short greeting, 2 short paragraphs, 1 CTA." if channel == "email" else "1 short sentence, 1 CTA link."
+        # ── Zomato-style time context ──────────────────────────────────────────
+        ctx = _time_context()
+        greeting     = ctx["greeting"].format(name=first_name)
+        time_summary = (
+            f"Time of day: {ctx['time_of_day']} ({ctx['hour']:02d}:00)\n"
+            f"Day: {ctx['day_of_week']} ({'Weekend' if ctx['is_weekend'] else 'Weekday'})\n"
+            f"Contextual hook: {ctx['tod_hook']}\n"
+            f"Day hook: {ctx['day_hook']}"
+        )
+        if ctx["season_context"]:
+            time_summary += f"\nSeasonal note: {ctx['season_context']}"
 
-        prompt = f"""You are a world-class banking marketing copywriter.
-Write a personalized {channel} for the customer below.
+        # Channel formatting
+        max_words = 150 if channel == "email" else 45
+        if channel == "email":
+            format_instructions = (
+                "1 compelling subject line, 1 personalised greeting using the exact time-of-day, "
+                "2 short paragraphs, 1 clear CTA button label."
+            )
+        else:
+            format_instructions = (
+                "1 short punchy sentence (with a time-aware hook), 1 CTA. Max 2 sentences total."
+            )
+
+        prompt = f"""You are a world-class banking marketing copywriter who writes like Zomato \u2014 witty, warm, hyper-personalised.
+Write a {channel} message for the customer below.
 
 CUSTOMER NAME: {first_name}
 RECOMMENDED PRODUCT: {product}
@@ -67,32 +150,36 @@ RECOMMENDED PRODUCT: {product}
 CUSTOMER PORTFOLIO:
 {portfolio_context}
 
-WHY WE ARE RECOMMENDING THIS (Use these exact reasons, do not invent new ones):
+TIME & CONTEXT (use this to make the message feel timely and alive):
+{time_summary}
+Greeting to use: "{greeting}"
+
+WHY WE ARE RECOMMENDING THIS (use these exact reasons, do not invent new ones):
 {chr(10).join(['- ' + r for r in reasons])}
 
 STRICT INSTRUCTIONS:
-1. Do NOT invent product features, interest rates, or eligibility claims.
-2. Reference the customer's portfolio to make the message feel genuinely personal.
-3. Tone: professional, empathetic, clear.
-4. Max words: {max_words}
-5. Format: {format_instructions}
+1. Open with the time-aware greeting above \u2014 make it feel like a push notification that arrived at exactly the right moment.
+2. Reference the customer\u2019s actual portfolio (cards, loans, investments) to make the message feel genuinely personal.
+3. Do NOT invent product features, interest rates, or eligibility claims.
+4. Tone: witty, warm, conversational \u2014 like a smart friend at a bank (Zomato-style).
+5. Max words: {max_words}
+6. Format: {format_instructions}
 
-OUTPUT FORMAT: You MUST return valid JSON exactly matching this schema:
+OUTPUT FORMAT: Return ONLY valid JSON matching this exact schema:
 {{
-  "subject": "Catchy subject line (or notification title)",
+  "subject": "Catchy subject line or notification title",
   "body": "The main message body text"
-}}
-"""
+}}"""
 
         if self.use_mock:
-            return self._mock_llm_call(first_name, product, reasons, channel)
+            return self._mock_llm_call(first_name, product, reasons, channel, ctx)
         else:
             try:
                 response = self.client.chat.completions.create(
                     messages=[
                         {
                             "role": "system",
-                            "content": "You are a banking marketing API. You only respond with valid JSON.",
+                            "content": "You are a banking marketing API that writes personalised messages. Always respond with valid JSON only.",
                         },
                         {
                             "role": "user",
@@ -100,37 +187,66 @@ OUTPUT FORMAT: You MUST return valid JSON exactly matching this schema:
                         },
                     ],
                     model="qwen/qwen3.6-27b",
-                    temperature=0.4,
-                    max_tokens=300,
-                    response_format={"type": "json_object"}
+                    temperature=0.7,
+                    max_tokens=2000,
                 )
                 content = response.choices[0].message.content.strip()
-                parsed = json.loads(content)
-                return f"Subject: {parsed.get('subject', '')}\n\n{parsed.get('body', '')}"
+                parsed  = self._extract_json(content)
+                if parsed:
+                    return f"Subject: {parsed.get('subject', '')}\n\n{parsed.get('body', '')}"
+                else:
+                    logger.warning("GenAI returned no parseable JSON — using mock fallback")
+                    return self._mock_llm_call(first_name, product, reasons, channel, ctx)
             except Exception as e:
                 logger.error(f"GenAI Service Error: {e}")
-                return self._mock_llm_call(first_name, product, reasons, channel)
+                return self._mock_llm_call(first_name, product, reasons, channel, ctx)
 
     # ─────────────────────────────────────────────────────────────────────────
     # Helpers
     # ─────────────────────────────────────────────────────────────────────────
 
-    def _mock_llm_call(self, first_name, product, reasons, channel):
+    def _extract_json(self, text: str) -> dict:
+        """Robustly extract a JSON object from model output, even if wrapped in markdown."""
+        import re
+        # Remove markdown code fences if present
+        text = re.sub(r"^```(?:json)?\s*", "", text.strip(), flags=re.MULTILINE)
+        text = re.sub(r"```\s*$", "", text.strip(), flags=re.MULTILINE)
+        # Try direct parse first
+        try:
+            return json.loads(text.strip())
+        except json.JSONDecodeError:
+            pass
+        # Try to extract first JSON object using regex
+        match = re.search(r"\{[\s\S]*?\}", text)
+        if match:
+            try:
+                return json.loads(match.group())
+            except json.JSONDecodeError:
+                pass
+        return {}
+
+    def _mock_llm_call(self, first_name, product, reasons, channel, ctx=None):
         """Structured mock fallback when no LLM is available or it fails."""
         reason_text = reasons[0] if reasons else "We believe this will help you achieve your financial goals."
-        
+        if ctx:
+            greeting = ctx["greeting"].format(name=first_name)
+            hook     = ctx["tod_hook"]
+        else:
+            greeting = f"Hi {first_name}"
+            hook     = ""
+
         if channel == "email":
             return (
                 f"Subject: {first_name}, a personalized recommendation just for you\n\n"
-                f"Hi {first_name},\n\n"
-                f"{reason_text}\n\n"
-                f"We recommend exploring {product} as a way to support your financial journey. "
-                f"It's designed to align with your current patterns.\n\n"
+                f"{greeting}\n\n"
+                f"{hook} {reason_text}\n\n"
+                f"We recommend exploring {product} — it's designed to align with your current financial patterns.\n\n"
                 f"Tap here to view the details in your banking app.\n\n"
                 f"Best regards,\nNPN Bank"
             )
         else:
             return (
                 f"Subject: New Recommendation: {product}\n\n"
-                f"Hi {first_name}, {reason_text.lower()} Check out {product} in your app today."
+                f"{greeting} {reason_text.lower()} Check out {product} in your app today."
             )
+
