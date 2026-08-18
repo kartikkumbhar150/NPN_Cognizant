@@ -11,9 +11,13 @@ Run:
 """
 
 import sys
+# ── Restart trigger ──
 import os
 import json
 import uuid
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 import math
@@ -23,7 +27,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 AI_ENGINE_DIR = os.path.join(BASE_DIR, "ai_engine")
 sys.path.insert(0, AI_ENGINE_DIR)
 
-from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi import FastAPI, HTTPException, Depends, status, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
@@ -33,6 +37,16 @@ from passlib.hash import sha256_crypt
 from dotenv import load_dotenv
 
 load_dotenv(os.path.join(BASE_DIR, ".env"))
+
+# ── Gmail credentials for real email sending ─────────────────────────────────
+GMAIL_SENDER = os.getenv("GMAIL_SENDER", "")
+GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD", "")
+
+# ── Twilio credentials for real SMS sending ───────────────────────────────────
+TWILIO_ACCOUNT_SID  = os.getenv("TWILIO_ACCOUNT_SID", "")
+TWILIO_AUTH_TOKEN   = os.getenv("TWILIO_AUTH_TOKEN", "")
+TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER", "")
+
 
 # ── AI Engine imports ─────────────────────────────────────────────────────────
 from ai_engine.data_loader import (
@@ -100,12 +114,18 @@ EMPLOYEES = {
     },
 }
 
-# ── In-memory campaign store ──────────────────────────────────────────────────
-CAMPAIGNS: List[dict] = []
+# ── Database Connection for Campaigns ─────────────────────────────────────────
+from sqlalchemy import create_engine, text
 
-# ── In-memory campaign analytics store ───────────────────────────────────────
-# campaign_id -> {sent, opened, clicked, applied, converted, events: []}
-CAMPAIGN_ANALYTICS: dict = {}
+DB_URL_CAMPAIGNS = os.getenv("SUPABASE_DB_URL", "")
+if DB_URL_CAMPAIGNS.startswith("postgres://"):
+    DB_URL_CAMPAIGNS = DB_URL_CAMPAIGNS.replace("postgres://", "postgresql://", 1)
+db_engine = create_engine(DB_URL_CAMPAIGNS) if DB_URL_CAMPAIGNS else None
+
+def get_db_connection():
+    if not db_engine:
+        raise HTTPException(status_code=500, detail="Database not configured")
+    return db_engine.connect()
 
 # ── Lazy-loaded data / engines ────────────────────────────────────────────────
 _data_cache = {}
@@ -122,6 +142,7 @@ def get_engines():
         print("Loading data and initialising AI engines v3.0...")
         print("- load_customers...")
         customers_df    = load_customers()
+        print(f"  -> Fetched {len(customers_df)} customers from Supabase")
         print("- load_transactions...")
         transactions_df = load_transactions()
         print("- load_credit_cards...")
@@ -312,10 +333,14 @@ def get_dashboard_stats(current_employee=Depends(get_current_employee)):
 
     credit_avg = round(float(customers_df["credit_score"].mean()), 0) if "credit_score" in customers_df.columns else 0
 
+    with get_db_connection() as conn:
+        total_campaigns = conn.execute(text("SELECT COUNT(*) FROM campaigns")).scalar()
+        active_campaigns = conn.execute(text("SELECT COUNT(*) FROM campaigns WHERE status = 'Active'")).scalar()
+
     return {
         "total_customers": total_customers,
-        "total_campaigns": len(CAMPAIGNS),
-        "active_campaigns": sum(1 for c in CAMPAIGNS if c["status"] == "Active"),
+        "total_campaigns": total_campaigns,
+        "active_campaigns": active_campaigns,
         "avg_credit_score": credit_avg,
         "income_distribution": income_dist,
         "segment_distribution": segment_dist,
@@ -612,12 +637,335 @@ Context-aware triggers to weave into the message (use only what's relevant):
 """
 
 
+# ── Email sending helpers ────────────────────────────────────────────────────
+
+def _send_email_smtp(to_email: str, subject: str, body: str, sender: str, password: str) -> bool:
+    """Send a single email via Gmail SMTP. Returns True on success."""
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = f"NPN Bank Marketing <{sender}>"
+        msg["To"] = to_email
+        msg.attach(MIMEText(body, "plain", "utf-8"))
+        with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
+            server.ehlo()
+            server.starttls()
+            server.login(sender, password)
+            server.sendmail(sender, to_email, msg.as_string())
+        return True
+    except Exception as e:
+        print(f"[EMAIL] Send failed to {to_email}: {e}")
+        return False
+
+
+def _send_campaign_emails_background(
+    campaign_id: str,
+    customer_ids: List[str],
+    product: str,
+    age_group_strategy: str,
+):
+    """
+    Background task: for each @gmail.com customer, generate a personalised
+    email via Groq AI and dispatch it via Gmail SMTP.
+    """
+    if not GMAIL_SENDER or not GMAIL_APP_PASSWORD:
+        print("[EMAIL] Skipped: GMAIL_SENDER / GMAIL_APP_PASSWORD not configured.")
+        return
+
+    eng = get_engines()
+    customers_df   = eng["customers_df"]
+    feature_engine = eng["feature_engine"]
+    genai_service  = eng["genai_service"]
+    groq_client    = genai_service.client if not genai_service.use_mock else None
+
+    import json as _json
+    import re as _re
+    import math as _math
+
+    sent_count, failed_count = 0, 0
+
+    for cid in customer_ids:
+        try:
+            row = customers_df[customers_df["customer_id"] == cid]
+            if row.empty:
+                continue
+
+            customer_data = row.iloc[0].to_dict()
+            cust_email = str(customer_data.get("email", "") or "").strip()
+
+            # ── Only @gmail.com addresses ─────────────────────────────────────
+            if not cust_email.lower().endswith("@gmail.com"):
+                continue
+
+            first_name     = str(customer_data.get("first_name") or "Customer")
+            last_name      = str(customer_data.get("last_name") or "")
+            age            = int(customer_data.get("age") or 35)
+            city           = str(customer_data.get("city") or "India")
+
+            def safe_num(val, default=0):
+                try:
+                    v = float(val)
+                    return 0 if (_math.isnan(v) or _math.isinf(v)) else v
+                except (TypeError, ValueError):
+                    return default
+
+            credit_score   = int(safe_num(customer_data.get("credit_score"), 700))
+            monthly_income = safe_num(customer_data.get("annual_income"), 0) / 12
+
+            age_group = detect_age_group(age, age_group_strategy)
+            strategy  = AGE_GROUP_STRATEGY[age_group]
+
+            now           = datetime.now()
+            day_name      = now.strftime("%A")
+            greeting_time = "morning" if now.hour < 12 else ("afternoon" if now.hour < 17 else "evening")
+
+            # Portfolio context
+            try:
+                features = feature_engine.compute(cid, customer_data)
+                lines = []
+                if features.held_card_names:
+                    lines.append(f"Credit Cards: {', '.join(features.held_card_names)}")
+                if features.held_loan_categories:
+                    lines.append(f"Loans: {', '.join(features.held_loan_categories)}, EMI ₹{safe_num(features.total_emi_monthly):,.0f}/mo")
+                if features.held_investment_categories:
+                    lines.append(f"Investments: {', '.join(features.held_investment_categories)}, value ₹{safe_num(features.total_assets_value):,.0f}")
+                portfolio_context = "\n".join(lines) if lines else "New to bank portfolio."
+            except Exception:
+                portfolio_context = "Portfolio data unavailable."
+
+            prompt = f"""You are a world-class personalised banking marketing copywriter at NPN Bank India.
+
+CUSTOMER PROFILE:
+- Name: {first_name} {last_name}
+- Age: {age} years (Generation: {age_group.upper()})
+- City: {city}
+- Credit Score: {credit_score}
+- Monthly Income: ₹{monthly_income:,.0f}
+- Current time: {greeting_time} on {day_name}
+
+PORTFOLIO:
+{portfolio_context}
+
+PRODUCT TO MARKET: {product}
+
+MARKETING STRATEGY — {age_group.upper()}:
+{strategy['tone']}
+OPENER STYLE: {strategy['opener_style']}
+
+{BANKING_CONTEXTUAL_TRIGGERS}
+
+CHANNEL: EMAIL
+FORMAT RULES: {strategy['email_format']}
+
+RULES:
+1. Address customer by first name: {first_name}
+2. Feel like written JUST for them — reference city, portfolio gaps, life stage
+3. No fictional interest rates or guaranteed returns
+4. NPN Bank India context, Indian Rupees (₹)
+5. Apply {age_group.upper()} generation strategy throughout
+
+OUTPUT: Return valid JSON only:
+{{"subject": "...", "body": "...", "age_group": "{age_group}", "strategy_used": "...", "preview_text": "..."}}"""
+
+            # Generate message
+            subject = f"Exclusive {product} Offer for You, {first_name}!"
+            body    = f"Dear {first_name},\n\nWe have an exclusive offer for {product} curated just for you.\n\nBest regards,\nNPN Bank Marketing Team"
+
+            if groq_client:
+                try:
+                    resp = groq_client.chat.completions.create(
+                        messages=[
+                            {"role": "system", "content": "You are a banking marketing API. Return only valid JSON."},
+                            {"role": "user",   "content": prompt},
+                        ],
+                        model="llama-3.1-8b-instant",
+                        temperature=0.7,
+                        max_tokens=1500,
+                    )
+                    raw = resp.choices[0].message.content.strip()
+                    raw = _re.sub(r"^```(?:json)?\s*", "", raw, flags=_re.MULTILINE)
+                    raw = _re.sub(r"```\s*$",        "", raw, flags=_re.MULTILINE).strip()
+                    parsed  = _json.loads(raw)
+                    subject = parsed.get("subject", subject)
+                    body    = parsed.get("body", body)
+                except Exception as gen_err:
+                    print(f"[EMAIL] Groq error for {cid}: {gen_err} — using fallback")
+                    fb      = _fallback_personalised_message(first_name, product, age_group, "email")
+                    subject = fb.get("subject", subject)
+                    body    = fb.get("body", body)
+            else:
+                fb      = _fallback_personalised_message(first_name, product, age_group, "email")
+                subject = fb.get("subject", subject)
+                body    = fb.get("body", body)
+
+            # Send the email
+            ok = _send_email_smtp(cust_email, subject, body, GMAIL_SENDER, GMAIL_APP_PASSWORD)
+            if ok:
+                sent_count += 1
+                print(f"[EMAIL] ✅ Sent to {cust_email} ({first_name} {last_name})")
+            else:
+                failed_count += 1
+
+        except Exception as exc:
+            print(f"[EMAIL] Error processing customer {cid}: {exc}")
+            failed_count += 1
+
+    print(f"[EMAIL] Campaign {campaign_id} complete — sent: {sent_count}, failed: {failed_count}")
+
+
+# ── SMS sending helpers ──────────────────────────────────────────────────────────────
+
+def _send_sms_twilio(to_number: str, body: str, account_sid: str, auth_token: str, from_number: str) -> bool:
+    """Send a single SMS via Twilio. Returns True on success."""
+    try:
+        from twilio.rest import Client
+        # Ensure phone number is in E.164 format (+91XXXXXXXXXX)
+        if not to_number.startswith("+"):
+            to_number = "+91" + to_number.lstrip("0")
+        client = Client(account_sid, auth_token)
+        message = client.messages.create(
+            body=body,
+            from_=from_number,
+            to=to_number
+        )
+        return message.sid is not None
+    except Exception as e:
+        print(f"[SMS] Send failed to {to_number}: {e}")
+        return False
+
+
+def _send_campaign_sms_background(
+    campaign_id: str,
+    customer_ids: List[str],
+    product: str,
+    age_group_strategy: str,
+):
+    """
+    Background task: for each customer with a mobile number, generate a
+    personalised SMS via Groq AI and dispatch it via Twilio.
+    """
+    if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN or not TWILIO_PHONE_NUMBER:
+        print("[SMS] Skipped: Twilio credentials not configured.")
+        return
+
+    eng = get_engines()
+    customers_df   = eng["customers_df"]
+    feature_engine = eng["feature_engine"]
+    genai_service  = eng["genai_service"]
+    groq_client    = genai_service.client if not genai_service.use_mock else None
+
+    import json as _json
+    import re as _re
+    import math as _math
+
+    sent_count, failed_count = 0, 0
+
+    for cid in customer_ids:
+        try:
+            row = customers_df[customers_df["customer_id"] == cid]
+            if row.empty:
+                continue
+
+            customer_data = row.iloc[0].to_dict()
+            mobile = str(customer_data.get("mobile_number", "") or "").strip()
+            if not mobile or "9322130400" not in mobile:
+                continue
+
+            first_name     = str(customer_data.get("first_name") or "Customer")
+            last_name      = str(customer_data.get("last_name") or "")
+            age            = int(customer_data.get("age") or 35)
+            city           = str(customer_data.get("city") or "India")
+
+            def safe_num(val, default=0):
+                try:
+                    v = float(val)
+                    return 0 if (_math.isnan(v) or _math.isinf(v)) else v
+                except (TypeError, ValueError):
+                    return default
+
+            credit_score   = int(safe_num(customer_data.get("credit_score"), 700))
+            monthly_income = safe_num(customer_data.get("annual_income"), 0) / 12
+
+            age_group = detect_age_group(age, age_group_strategy)
+            strategy  = AGE_GROUP_STRATEGY[age_group]
+
+            prompt = f"""You are a world-class personalised banking SMS copywriter at NPN Bank India.
+
+CUSTOMER PROFILE:
+- Name: {first_name} {last_name}
+- Age: {age} years (Generation: {age_group.upper()})
+- City: {city}
+- Credit Score: {credit_score}
+- Monthly Income: ₹{monthly_income:,.0f}
+
+PRODUCT TO MARKET: {product}
+
+MARKETING STRATEGY — {age_group.upper()}:
+{strategy['tone']}
+OPENER STYLE: {strategy['opener_style']}
+
+CHANNEL: SMS
+FORMAT RULES: {strategy['sms_format']}
+
+CRITICAL SMS RULES:
+1. Address customer by first name: {first_name}
+2. Maximum 160 characters total (strict SMS limit)
+3. No fictional interest rates or guaranteed returns
+4. NPN Bank India context, Indian Rupees (₹)
+5. End with a short CTA link: npnbank.in/offer
+
+OUTPUT: Return valid JSON only:
+{{"body": "...", "age_group": "{age_group}"}}"""
+
+            # Generate SMS body
+            sms_body = f"{first_name}! Exclusive {product} offer from NPN Bank. Grab it now: npnbank.in/offer"
+
+            if groq_client:
+                try:
+                    resp = groq_client.chat.completions.create(
+                        messages=[
+                            {"role": "system", "content": "You are a banking marketing API. Return only valid JSON."},
+                            {"role": "user",   "content": prompt},
+                        ],
+                        model="llama-3.1-8b-instant",
+                        temperature=0.7,
+                        max_tokens=300,
+                    )
+                    raw = resp.choices[0].message.content.strip()
+                    raw = _re.sub(r"^```(?:json)?\s*", "", raw, flags=_re.MULTILINE)
+                    raw = _re.sub(r"```\s*$",        "", raw, flags=_re.MULTILINE).strip()
+                    parsed   = _json.loads(raw)
+                    sms_body = parsed.get("body", sms_body)[:160]  # enforce 160-char limit
+                except Exception as gen_err:
+                    print(f"[SMS] Groq error for {cid}: {gen_err} — using fallback")
+                    fb = _fallback_personalised_message(first_name, product, age_group, "sms")
+                    sms_body = fb.get("body", sms_body)[:160]
+            else:
+                fb = _fallback_personalised_message(first_name, product, age_group, "sms")
+                sms_body = fb.get("body", sms_body)[:160]
+
+            # Send the SMS
+            ok = _send_sms_twilio(mobile, sms_body, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER)
+            if ok:
+                sent_count += 1
+                print(f"[SMS] ✅ Sent to {mobile} ({first_name} {last_name})")
+            else:
+                failed_count += 1
+
+        except Exception as exc:
+            print(f"[SMS] Error processing customer {cid}: {exc}")
+            failed_count += 1
+
+    print(f"[SMS] Campaign {campaign_id} complete — sent: {sent_count}, failed: {failed_count}")
+
+
 @app.post("/api/campaigns", tags=["Campaigns"])
 def create_campaign(
     campaign: CampaignCreate,
+    background_tasks: BackgroundTasks,
     current_employee=Depends(get_current_employee),
 ):
-    """Create and launch a new marketing campaign."""
+    """Create and launch a new marketing campaign, and send real emails to @gmail.com customers."""
     import random
     campaign_id = str(uuid.uuid4())[:8].upper()
     audience_count = len(campaign.customer_ids) if campaign.customer_ids else 0
@@ -640,8 +988,6 @@ def create_campaign(
         "audience_count": audience_count,
         "customer_ids": campaign.customer_ids,
     }
-    CAMPAIGNS.insert(0, new_campaign)
-
     # Seed realistic analytics for the campaign
     sent = max(audience_count, 1)
     opened = int(sent * random.uniform(0.55, 0.75))
@@ -649,7 +995,7 @@ def create_campaign(
     applied = int(clicked * random.uniform(0.25, 0.45))
     converted = int(applied * random.uniform(0.40, 0.65))
 
-    CAMPAIGN_ANALYTICS[campaign_id] = {
+    analytics_data = {
         "sent": sent,
         "opened": opened,
         "clicked": clicked,
@@ -666,13 +1012,110 @@ def create_campaign(
         ],
     }
 
+    # ── Count @gmail.com recipients upfront (fast scan, no AI) ─────────────
+    gmail_count = 0
+    if campaign.channel == "Email" and campaign.customer_ids:
+        eng_data     = get_engines()
+        customers_df = eng_data["customers_df"]
+        for cid in campaign.customer_ids:
+            r = customers_df[customers_df["customer_id"] == cid]
+            if not r.empty:
+                em = str(r.iloc[0].get("email", "") or "").strip()
+                if em.lower().endswith("@gmail.com"):
+                    gmail_count += 1
+
+    new_campaign["gmail_recipients"] = gmail_count
+    new_campaign["email_dispatch_status"] = "queued" if (campaign.channel == "Email" and GMAIL_SENDER and gmail_count > 0) else "skipped"
+
+    import json as _json
+    # Save to Supabase DB
+    with get_db_connection() as conn:
+        conn.execute(
+            text("""
+                INSERT INTO campaigns (id, customer_id, customer_name, product, campaign_name, description, channel, message_preview, message_email, message_sms, age_group_strategy, status, created_at, created_by, audience_count, customer_ids, gmail_recipients, email_dispatch_status)
+                VALUES (:id, :customer_id, :customer_name, :product, :campaign_name, :description, :channel, :message_preview, :message_email, :message_sms, :age_group_strategy, :status, :created_at, :created_by, :audience_count, :customer_ids, :gmail_recipients, :email_dispatch_status)
+            """),
+            {**new_campaign, "customer_ids": _json.dumps(new_campaign["customer_ids"])}
+        )
+        conn.execute(
+            text("""
+                INSERT INTO campaign_analytics (campaign_id, sent, opened, clicked, applied, converted, channel_breakdown, events, hourly_opens)
+                VALUES (:campaign_id, :sent, :opened, :clicked, :applied, :converted, :channel_breakdown, :events, :hourly_opens)
+            """),
+            {
+                "campaign_id": campaign_id,
+                "sent": sent,
+                "opened": opened,
+                "clicked": clicked,
+                "applied": applied,
+                "converted": converted,
+                "channel_breakdown": _json.dumps(analytics_data["channel_breakdown"]),
+                "events": _json.dumps(analytics_data["events"]),
+                "hourly_opens": _json.dumps(analytics_data["hourly_opens"]),
+            }
+        )
+        conn.commit()
+
+    # ── Fire real email sending in the background ─────────────────────────
+    if campaign.channel == "Email" and GMAIL_SENDER and gmail_count > 0:
+        background_tasks.add_task(
+            _send_campaign_emails_background,
+            campaign_id,
+            campaign.customer_ids,
+            campaign.product,
+            campaign.age_group_strategy or "auto",
+        )
+        print(f"[EMAIL] 🚀 Background email dispatch queued for campaign {campaign_id} — {gmail_count} @gmail.com recipients")
+
+    # ── Count SMS recipients and fire real SMS in the background ──────────
+    sms_count = 0
+    if campaign.channel == "SMS" and campaign.customer_ids:
+        eng_data     = get_engines()
+        customers_df = eng_data["customers_df"]
+        for cid in campaign.customer_ids:
+            r = customers_df[customers_df["customer_id"] == cid]
+            if not r.empty:
+                mob = str(r.iloc[0].get("mobile_number", "") or "").strip()
+                if mob and "9322130400" in mob:
+                    sms_count += 1
+
+    new_campaign["sms_recipients"] = sms_count
+    new_campaign["sms_dispatch_status"] = "queued" if (campaign.channel == "SMS" and TWILIO_ACCOUNT_SID and sms_count > 0) else "skipped"
+
+    if campaign.channel == "SMS" and TWILIO_ACCOUNT_SID and sms_count > 0:
+        background_tasks.add_task(
+            _send_campaign_sms_background,
+            campaign_id,
+            campaign.customer_ids,
+            campaign.product,
+            campaign.age_group_strategy or "auto",
+        )
+        print(f"[SMS] 🚀 Background SMS dispatch queued for campaign {campaign_id} — {sms_count} recipients")
+
     return new_campaign
+
 
 
 @app.get("/api/campaigns", tags=["Campaigns"])
 def list_campaigns(current_employee=Depends(get_current_employee)):
     """List all campaigns."""
-    return {"campaigns": CAMPAIGNS}
+    import json as _json
+    campaigns_list = []
+    with get_db_connection() as conn:
+        res = conn.execute(text("SELECT * FROM campaigns ORDER BY created_at DESC")).mappings().all()
+        for row in res:
+            c = dict(row)
+            if isinstance(c.get("customer_ids"), str):
+                try:
+                    c["customer_ids"] = _json.loads(c["customer_ids"])
+                except:
+                    c["customer_ids"] = []
+            elif c.get("customer_ids") is None:
+                c["customer_ids"] = []
+            if isinstance(c.get("created_at"), datetime):
+                c["created_at"] = c["created_at"].isoformat()
+            campaigns_list.append(c)
+    return {"campaigns": campaigns_list}
 
 
 @app.patch("/api/campaigns/{campaign_id}/status", tags=["Campaigns"])
@@ -682,10 +1125,15 @@ def update_campaign_status(
     current_employee=Depends(get_current_employee),
 ):
     """Update a campaign's status (Active | Draft | Completed)."""
-    for c in CAMPAIGNS:
-        if c["id"] == campaign_id:
-            c["status"] = status_update.get("status", c["status"])
-            return c
+    new_status = status_update.get("status")
+    with get_db_connection() as conn:
+        res = conn.execute(
+            text("UPDATE campaigns SET status = :status WHERE id = :id RETURNING *"),
+            {"status": new_status, "id": campaign_id}
+        ).fetchone()
+        conn.commit()
+        if res:
+            return dict(res._mapping)
     raise HTTPException(status_code=404, detail="Campaign not found")
 
 
@@ -995,23 +1443,43 @@ def record_campaign_event(
     current_employee=Depends(get_current_employee),
 ):
     """Record an analytics event (opened, clicked, applied, converted) for a campaign."""
-    if campaign_id not in CAMPAIGN_ANALYTICS:
-        CAMPAIGN_ANALYTICS[campaign_id] = {
-            "sent": 1, "opened": 0, "clicked": 0, "applied": 0, "converted": 0,
-            "channel_breakdown": {"email": {"sent": 1, "opened": 0}, "sms": {"sent": 0, "opened": 0}},
-            "events": [],
-            "hourly_opens": [],
-        }
-    analytics = CAMPAIGN_ANALYTICS[campaign_id]
+    import json as _json
     valid_events = {"opened", "clicked", "applied", "converted"}
-    if event.event_type in valid_events:
-        analytics[event.event_type] = analytics.get(event.event_type, 0) + 1
-    analytics["events"].append({
-        "type":        event.event_type,
-        "customer_id": event.customer_id,
-        "channel":     event.channel,
-        "timestamp":   datetime.now().isoformat(),
-    })
+    if event.event_type not in valid_events:
+        return {"status": "ignored", "event": event.event_type}
+
+    with get_db_connection() as conn:
+        res = conn.execute(text("SELECT events FROM campaign_analytics WHERE campaign_id = :id"), {"id": campaign_id}).fetchone()
+        if not res:
+            raise HTTPException(status_code=404, detail="Campaign not found")
+        
+        # update counter
+        conn.execute(
+            text(f"UPDATE campaign_analytics SET {event.event_type} = {event.event_type} + 1 WHERE campaign_id = :id"),
+            {"id": campaign_id}
+        )
+
+        # update events jsonb
+        events_list = []
+        if res[0]:
+            try:
+                events_list = _json.loads(res[0]) if isinstance(res[0], str) else res[0]
+            except:
+                pass
+        
+        events_list.append({
+            "type":        event.event_type,
+            "customer_id": event.customer_id,
+            "channel":     event.channel,
+            "timestamp":   datetime.now().isoformat(),
+        })
+
+        conn.execute(
+            text("UPDATE campaign_analytics SET events = :events WHERE campaign_id = :id"),
+            {"events": _json.dumps(events_list), "id": campaign_id}
+        )
+        conn.commit()
+
     return {"status": "recorded", "event": event.event_type}
 
 
@@ -1021,17 +1489,39 @@ def get_campaign_analytics(
     current_employee=Depends(get_current_employee),
 ):
     """Get full analytics for a specific campaign."""
-    campaign = next((c for c in CAMPAIGNS if c["id"] == campaign_id), None)
-    if not campaign:
-        raise HTTPException(status_code=404, detail="Campaign not found")
+    import json as _json
+    with get_db_connection() as conn:
+        campaign_row = conn.execute(text("SELECT * FROM campaigns WHERE id = :id"), {"id": campaign_id}).mappings().fetchone()
+        if not campaign_row:
+            raise HTTPException(status_code=404, detail="Campaign not found")
+        
+        analytics_row = conn.execute(text("SELECT * FROM campaign_analytics WHERE campaign_id = :id"), {"id": campaign_id}).mappings().fetchone()
+        
+    campaign = dict(campaign_row)
+    
+    if analytics_row:
+        analytics = dict(analytics_row)
+    else:
+        analytics = {
+            "sent": campaign.get("audience_count", 0),
+            "opened": 0, "clicked": 0, "applied": 0, "converted": 0,
+            "channel_breakdown": {"email": {"sent": 0, "opened": 0}, "sms": {"sent": 0, "opened": 0}},
+            "events": [],
+            "hourly_opens": [],
+        }
 
-    analytics = CAMPAIGN_ANALYTICS.get(campaign_id, {
-        "sent": campaign.get("audience_count", 0),
-        "opened": 0, "clicked": 0, "applied": 0, "converted": 0,
-        "channel_breakdown": {"email": {"sent": 0, "opened": 0}, "sms": {"sent": 0, "opened": 0}},
-        "events": [],
-        "hourly_opens": [],
-    })
+    # deserialize JSON fields if they are strings
+    def parse_json_col(val, default):
+        if isinstance(val, str):
+            try:
+                return _json.loads(val)
+            except:
+                return default
+        return val if val is not None else default
+
+    analytics["channel_breakdown"] = parse_json_col(analytics.get("channel_breakdown"), {"email": {"sent": 0, "opened": 0}, "sms": {"sent": 0, "opened": 0}})
+    analytics["events"] = parse_json_col(analytics.get("events"), [])
+    analytics["hourly_opens"] = parse_json_col(analytics.get("hourly_opens"), [])
 
     sent = max(analytics.get("sent", 1), 1)
     opened    = analytics.get("opened", 0)
@@ -1097,7 +1587,10 @@ def get_campaign_insights(current_employee=Depends(get_current_employee)):
     eng = get_engines()
     genai_service = eng["genai_service"]
 
-    if not CAMPAIGNS:
+    with get_db_connection() as conn:
+        campaigns_list = conn.execute(text("SELECT * FROM campaigns ORDER BY created_at DESC LIMIT 10")).mappings().all()
+
+    if not campaigns_list:
         return {
             "insights": [],
             "overall_health": "No campaigns launched yet. Create your first campaign to see AI insights.",
@@ -1106,19 +1599,27 @@ def get_campaign_insights(current_employee=Depends(get_current_employee)):
 
     # Build performance summary for all campaigns
     campaign_summaries = []
-    for c in CAMPAIGNS[:10]:  # Analyze last 10 campaigns
-        cid = c["id"]
-        analytics = CAMPAIGN_ANALYTICS.get(cid, {})
-        sent = max(analytics.get("sent", c.get("audience_count", 1)), 1)
-        opened    = analytics.get("opened", 0)
-        converted = analytics.get("converted", 0)
-        open_rate = round((opened / sent) * 100, 1)
-        conv_rate = round((converted / sent) * 100, 2)
-        campaign_summaries.append(
-            f"- Campaign '{c['campaign_name']}' | Product: {c['product']} | Channel: {c['channel']} "
-            f"| Sent: {sent} | Open Rate: {open_rate}% | Conv Rate: {conv_rate}% "
-            f"| Age Strategy: {c.get('age_group_strategy', 'auto')}"
-        )
+    with get_db_connection() as conn:
+        for c in campaigns_list:
+            cid = c["id"]
+            analytics_row = conn.execute(text("SELECT sent, opened, converted FROM campaign_analytics WHERE campaign_id = :id"), {"id": cid}).mappings().fetchone()
+            
+            if analytics_row:
+                sent = max(analytics_row.get("sent") or c.get("audience_count") or 1, 1)
+                opened = analytics_row.get("opened") or 0
+                converted = analytics_row.get("converted") or 0
+            else:
+                sent = max(c.get("audience_count") or 1, 1)
+                opened = 0
+                converted = 0
+
+            open_rate = round((opened / sent) * 100, 1)
+            conv_rate = round((converted / sent) * 100, 2)
+            campaign_summaries.append(
+                f"- Campaign '{c['campaign_name']}' | Product: {c['product']} | Channel: {c['channel']} "
+                f"| Sent: {sent} | Open Rate: {open_rate}% | Conv Rate: {conv_rate}% "
+                f"| Age Strategy: {c.get('age_group_strategy', 'auto')}"
+            )
 
     performance_data = "\n".join(campaign_summaries)
 
@@ -1176,8 +1677,11 @@ Return valid JSON:
             print(f"Campaign insights error: {e}")
 
     # Fallback static insights
+    with get_db_connection() as conn:
+        total_campaigns = conn.execute(text("SELECT COUNT(*) FROM campaigns")).scalar()
+
     return {
-        "overall_health": f"{len(CAMPAIGNS)} campaigns active. Performance tracking in progress.",
+        "overall_health": f"{total_campaigns} campaigns active. Performance tracking in progress.",
         "insights": [
             {"type": "info",    "title": "SMS outperforms Email for Gen Z", "description": "Customers aged 18-25 show 3x higher response to SMS messages with contextual hooks vs formal emails."},
             {"type": "success", "title": "Achievement-framing boosts Millennial open rates", "description": "Emails starting with 'Congratulations!' see 40% higher open rates among 26-40 age group."},
@@ -1290,7 +1794,9 @@ def get_segments(current_employee=Depends(get_current_employee)):
 
 @app.get("/api/analytics", tags=["Analytics"])
 def get_analytics(current_employee=Depends(get_current_employee)):
-    total_campaigns = len(CAMPAIGNS)
+    with get_db_connection() as conn:
+        total_campaigns = conn.execute(text("SELECT COUNT(*) FROM campaigns")).scalar()
+        
     total_customers_reached = total_campaigns * 420 if total_campaigns > 0 else 8120
 
     funnel = [

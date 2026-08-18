@@ -615,7 +615,7 @@ export default function Campaigns({ initialProduct, initialSegment, onNavigateAn
       <CampaignSuccessModal
         isOpen={isSuccessModalOpen}
         onClose={() => { setIsSuccessModalOpen(false); setStep(1); setCampaignName(''); setGeneratedBody(''); setPreviewMsg(null); setNboCustomers([]); }}
-        campaignData={{ product: selectedProduct, segment: productInfo.segment, audienceCount: selectedCustomerIds.length }}
+        campaignData={{ product: selectedProduct, segment: productInfo.segment, audienceCount: selectedCustomerIds.length, gmailRecipients: launchedCampaign?.gmail_recipients ?? 0, smsRecipients: launchedCampaign?.sms_recipients ?? 0, channel: selectedChannel }}
         onNavigateAnalytics={onNavigateAnalytics}
       />
     </div>

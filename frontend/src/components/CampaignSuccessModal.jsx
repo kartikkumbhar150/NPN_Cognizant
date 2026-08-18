@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircle2, X, Sparkles, Send, Megaphone, Users, Calendar, ArrowRight, BarChart2 } from 'lucide-react';
+import { CheckCircle2, X, Sparkles, Send, Megaphone, Users, Calendar, ArrowRight, BarChart2, Mail, MessageSquare } from 'lucide-react';
 
 export default function CampaignSuccessModal({ isOpen, onClose, campaignData, onNavigateAnalytics }) {
   if (!isOpen) return null;
@@ -53,6 +53,58 @@ export default function CampaignSuccessModal({ isOpen, onClose, campaignData, on
               </span>
             </div>
           </div>
+
+          {/* Real email dispatch badge — only shown for Email channel */}
+          {campaignData?.channel === 'Email' && (
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center shrink-0">
+                <Mail className="w-4 h-4 text-emerald-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                {campaignData?.gmailRecipients > 0 ? (
+                  <>
+                    <p className="text-xs font-bold text-emerald-900">
+                      📧 {campaignData.gmailRecipients} real emails dispatched
+                    </p>
+                    <p className="text-[10px] text-emerald-700 mt-0.5">
+                      Personalised AI emails sent live to @gmail.com customers via Gmail SMTP.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xs font-bold text-slate-700">No @gmail.com customers in this batch</p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">Real sending only applies to @gmail.com addresses.</p>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Real SMS dispatch badge — only shown for SMS channel */}
+          {campaignData?.channel === 'SMS' && (
+            <div className="p-3 bg-violet-50 border border-violet-200 rounded-xl flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-violet-100 flex items-center justify-center shrink-0">
+                <MessageSquare className="w-4 h-4 text-violet-600" />
+              </div>
+              <div className="flex-1 min-w-0">
+                {campaignData?.smsRecipients > 0 ? (
+                  <>
+                    <p className="text-xs font-bold text-violet-900">
+                      💬 {campaignData.smsRecipients} real SMS messages dispatched
+                    </p>
+                    <p className="text-[10px] text-violet-700 mt-0.5">
+                      Personalised AI SMS sent live to customers via Twilio.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xs font-bold text-slate-700">No mobile numbers found in this batch</p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">Real SMS sending requires a mobile_number on the customer record.</p>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
 
           <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-xl text-xs text-blue-900 leading-relaxed">
             <span className="font-semibold text-blue-950">Queue Confirmation:</span> 

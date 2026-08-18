@@ -22,69 +22,63 @@ DATA_DIR    = os.path.join(os.path.dirname(__file__), '..', 'Database_csvs')
 HOLDINGS_DIR = os.path.join(DATA_DIR, 'generated_customer_360')
 
 
-def _load_table(table_name, csv_fallback):
-    """Helper to load from Supabase with a fallback to local CSV."""
-    if engine:
-        try:
-            return pd.read_sql_table(table_name, engine)
-        except Exception as e:
-            print(f"Failed to load {table_name} from Supabase: {e}. Falling back to CSV.")
-
-    # Fallback to CSV
-    filepath = os.path.join(DATA_DIR, csv_fallback)
-    return pd.read_csv(filepath)
+def _load_table(table_name):
+    """Helper to load exclusively from Supabase."""
+    if not engine:
+        raise ValueError("SUPABASE_DB_URL is not set. Cannot fetch from Supabase.")
+    try:
+        return pd.read_sql_table(table_name, engine)
+    except Exception as e:
+        print(f"Warning: Failed to load {table_name} from Supabase: {e}")
+        return pd.DataFrame()
 
 
 def load_customers():
     """Loads the customer dataset from Supabase."""
-    return _load_table('customers', 'customers.csv')
+    return _load_table('customers')
 
 
 def load_transactions():
     """Loads the raw transactions dataset from Supabase."""
-    df = _load_table('raw_transactions', 'raw_transactions.csv')
+    df = _load_table('raw_transactions')
     df['transaction_date'] = pd.to_datetime(df['transaction_date'])
     return df
 
 
 def load_credit_cards():
     """Loads the credit card products catalogue from Supabase."""
-    return _load_table('credit_card_products', 'credit_card_products.csv')
+    return _load_table('credit_card_products')
 
 
 def load_loan_products():
     """Loads the loan products catalogue from Supabase."""
-    return _load_table('loan_products', 'loan_products.csv')
+    return _load_table('loan_products')
 
 
 def load_investment_products():
     """Loads the investment products catalogue from Supabase."""
-    return _load_table('investment_products', 'investment_products.csv')
+    return _load_table('investment_products')
 
 
 def load_insurance_products():
     """Loads the insurance product catalogue from Supabase."""
-    for table, csv in [
-        ('insurance_products', 'insurance_products.csv'),
-        ('insurance', 'insurance.csv'),
-    ]:
-        try:
-            return _load_table(table, csv)
-        except Exception:
-            pass
+    for table in ['insurance_products', 'insurance']:
+        df = _load_table(table)
+        if not df.empty:
+            return df
     return pd.DataFrame()
 
 
 def load_customer_holdings():
     """Loads all Customer 360 holdings datasets."""
     return {
-        "accounts":     _load_table('customer_accounts',     'generated_customer_360/customer_accounts.csv'),
-        "deposits":     _load_table('customer_deposits',     'generated_customer_360/customer_deposits.csv'),
-        "credit_cards": _load_table('customer_credit_cards', 'generated_customer_360/customer_credit_cards.csv'),
-        "debit_cards":  _load_table('customer_debit_cards',  'generated_customer_360/customer_debit_cards.csv'),
-        "investments":  _load_table('customer_investments',  'generated_customer_360/customer_investments.csv'),
-        "loans":        _load_table('customer_loans',        'generated_customer_360/customer_loans.csv'),
-        "insurance":    _load_table('customer_insurance',    'generated_customer_360/customer_insurance.csv'),
+        "accounts":     _load_table('customer_accounts'),
+        "deposits":     _load_table('customer_deposits'),
+        "credit_cards": _load_table('customer_credit_cards'),
+        "debit_cards":  _load_table('customer_debit_cards'),
+        "investments":  _load_table('customer_investments'),
+        "loans":        _load_table('customer_loans'),
+        "insurance":    _load_table('customer_insurance'),
     }
 
 
@@ -110,6 +104,6 @@ def load_customer_360_json() -> dict:
 def load_merchants():
     """Load the merchant master table."""
     try:
-        return _load_table('merchants', 'merchants.csv')
+        return _load_table('merchants')
     except Exception:
         return pd.DataFrame()
