@@ -385,9 +385,9 @@
                     <i data-lucide="brain" style="color: white; width: 32px; height: 32px;"></i>
                 </div>
                 <h2>NPN Bank AI</h2>
-                <p>Enter your registered email to continue</p>
+                <p>Enter your registered phone number to continue</p>
                 <form id="loginForm">
-                    <input type="email" id="emailInput" class="login-input" placeholder="e.g. priya.sharma@example.com" required autocomplete="email">
+                    <input type="tel" id="phoneInput" class="login-input" placeholder="e.g. 9876543210" required autocomplete="tel">
                     <button type="submit" class="btn-primary">Connect to AI</button>
                 </form>
             </div>
@@ -401,7 +401,7 @@
                 </div>
                 <div>
                     <div class="header-title">NPN Bank Assistant</div>
-                    <div class="header-subtitle" id="userEmailDisplay">Connecting...</div>
+                    <div class="header-subtitle" id="userPhoneDisplay">Connecting...</div>
                 </div>
             </div>
             <div class="header-actions">
@@ -433,14 +433,14 @@
         lucide.createIcons();
 
         // State
-        let currentEmail = '';
-        const API_URL = 'https://npnbank-backend.duckdns.org/chatbot/ask/email';
+        let currentPhone = '';
+        const API_URL = 'https://npnbank-backend.duckdns.org/chatbot/ask';
 
         // DOM Elements
         const loginScreen = document.getElementById('loginScreen');
         const loginForm = document.getElementById('loginForm');
-        const emailInput = document.getElementById('emailInput');
-        const userEmailDisplay = document.getElementById('userEmailDisplay');
+        const phoneInput = document.getElementById('phoneInput');
+        const userPhoneDisplay = document.getElementById('userPhoneDisplay');
         const chatBody = document.getElementById('chatBody');
         const messageInput = document.getElementById('messageInput');
         const sendBtn = document.getElementById('sendBtn');
@@ -448,10 +448,10 @@
         // Login Handler
         loginForm.addEventListener('submit', (e) => {
             e.preventDefault();
-            const email = emailInput.value.trim();
-            if (email) {
-                currentEmail = email;
-                userEmailDisplay.textContent = email;
+            const phone = phoneInput.value.trim();
+            if (phone) {
+                currentPhone = phone;
+                userPhoneDisplay.textContent = phone;
                 loginScreen.classList.add('hidden');
                 setTimeout(() => messageInput.focus(), 500);
             }
@@ -496,7 +496,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         message: text,
-                        email: currentEmail
+                        phone_number: currentPhone
                     })
                 });
 

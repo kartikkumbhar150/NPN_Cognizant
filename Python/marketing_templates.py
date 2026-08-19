@@ -362,6 +362,16 @@ def build_html_email(
                 </td>
               </tr>
 
+              <!-- Chatbot CTA -->
+              <tr>
+                <td align="center" style="padding-bottom:28px;">
+                  <p style="margin:0;font-size:15px;color:#475569;">
+                    Talk to our agent to chat with the agent: 
+                    <a href="https://chatui-kappa-gules.vercel.app/" style="color:{primary};font-weight:bold;text-decoration:none;">Click Here</a>
+                  </p>
+                </td>
+              </tr>
+
               <!-- Disclaimer -->
               <tr>
                 <td>
@@ -471,6 +481,7 @@ def build_sms_body(
     facts_text = "\n".join(clean_facts)
 
     cta = "Apply: npnbank.in/apply"
+    chat_cta = "Talk to our agent to chat with the agent: https://chatui-kappa-gules.vercel.app/"
 
-    full = f"Hey {first_name}! {tagline}\n\nWhy {product}?\n{facts_text}\n\n{cta}"
+    full = f"Hey {first_name}! {tagline}\n\nWhy {product}?\n{facts_text}\n\n{cta}\n\n{chat_cta}"
     return full
