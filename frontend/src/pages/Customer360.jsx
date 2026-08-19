@@ -524,9 +524,9 @@ export default function Customer360({ customer, onBack, onNavigateCampaigns }) {
                     <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">{inv.investment_status || 'Active'}</span>
                   </div>
                   <div className="grid grid-cols-3 gap-2 text-xs">
-                    <div><p className="text-slate-400">Current Value</p><p className="font-bold text-emerald-800">{fmtCur(inv.current_value || inv.invested_amount)}</p></div>
-                    <div><p className="text-slate-400">Invested</p><p className="font-bold text-slate-700">{fmtCur(inv.invested_amount || 0)}</p></div>
-                    <div><p className="text-slate-400">Monthly SIP</p><p className="font-bold text-blue-700">{fmtCur(inv.monthly_sip_amount || 0)}</p></div>
+                    <div><p className="text-slate-400">Current Value</p><p className="font-bold text-emerald-800">{fmtCur(inv.current_value)}</p></div>
+                    <div><p className="text-slate-400">Invested</p><p className="font-bold text-slate-700">{fmtCur(inv.total_invested_amount || inv.invested_amount || 0)}</p></div>
+                    <div><p className="text-slate-400">Monthly SIP</p><p className="font-bold text-blue-700">{fmtCur(inv.monthly_sip_amount || inv.sip_amount || 0)}</p></div>
                   </div>
                 </div>
               ))}
@@ -595,97 +595,149 @@ export default function Customer360({ customer, onBack, onNavigateCampaigns }) {
   };
 
   // ── NBO Propensity Tab ────────────────────────────────────────────────────
-  const NboTab = () => (
-    <div className="space-y-4">
-      {/* Best Offer */}
-      {nbo.specific_product && (
-        <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl p-5 text-white">
-          <div className="flex items-center gap-2 mb-1">
-            <Sparkles className="w-4 h-4 text-yellow-300" />
-            <span className="text-xs font-semibold text-blue-100 uppercase tracking-wide">Top NBO Recommendation</span>
-          </div>
-          <p className="text-xl font-bold">{nbo.specific_product}</p>
-          <p className="text-sm text-blue-100 mt-0.5">Propensity: {nbo.propensity}</p>
-          {nbo.is_upgrade && <span className="mt-2 inline-flex items-center gap-1 text-xs font-semibold bg-white/20 px-2 py-0.5 rounded-full">⬆️ Upgrade Offer</span>}
-          {nbo.low_confidence && <p className="text-xs text-yellow-200 mt-2">⚠️ Low confidence — limited transaction history</p>}
-        </div>
-      )}
+  const NboTab = () => {
+    // Group all scores by product_type category
+    const CATEGORY_CONFIG = [
+      { key: 'credit_card',       label: '💳 Credit Cards',   types: ['credit_card', 'credit_card_upgrade'] },
+      { key: 'loan',              label: '🏦 Loans',           types: ['loan'] },
+      { key: 'investment',        label: '📈 Investments',     types: ['investment'] },
+      { key: 'insurance',         label: '🛡️ Insurance',       types: ['insurance'] },
+      { key: 'other',             label: '📦 Other Services',  types: [] }, // catch-all
+    ];
 
-      {/* All Propensity Scores */}
-      <div className="bg-white border border-slate-200 rounded-xl p-5">
-        <h3 className="text-xs font-semibold text-slate-500 mb-4 uppercase tracking-wide">All Banking Services — Propensity Ranking</h3>
+    const grouped = {};
+    CATEGORY_CONFIG.forEach(c => { grouped[c.key] = []; });
+
+    allScores.forEach(item => {
+      const t = (item.product_type || '').toLowerCase();
+      const cat = CATEGORY_CONFIG.find(c => c.types.includes(t));
+      if (cat) {
+        grouped[cat.key].push(item);
+      } else {
+        grouped['other'].push(item);
+      }
+    });
+
+    // Helper: get the most relevant evidence string for the given product type
+    const getRelevantEvidence = (item) => {
+      const evidence = item.fit_evidence || [];
+      const t = (item.product_type || '').toLowerCase();
+      // Filter evidence that is NOT about insurance if this is not an insurance product
+      const filtered = t.includes('insurance')
+        ? evidence
+        : evidence.filter(e => !e.toLowerCase().includes('insurance premium'));
+      return filtered[0] || null;
+    };
+
+    const ScoreRow = ({ item, i }) => {
+      const score = item.nbo_score || 0;
+      const pct = Math.round(score * 100);
+      const barColor = pct >= 60 ? '#10B981' : pct >= 40 ? '#3B82F6' : pct >= 20 ? '#F59E0B' : '#94A3B8';
+      const evidence = getRelevantEvidence(item);
+      return (
+        <div className="space-y-1">
+          <div className="flex items-center justify-between text-xs">
+            <div className="flex items-center gap-2">
+              <span className="text-slate-400 w-4 text-right">{i + 1}.</span>
+              <span className="font-medium text-slate-800">{item.product_name || item.specific_product}</span>
+              {item.is_upgrade && <span className="text-[10px] font-bold px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded-full">UPGRADE</span>}
+            </div>
+            <span className="font-bold" style={{ color: barColor }}>{pct}%</span>
+          </div>
+          <ScoreBar score={pct} color={barColor} />
+          {evidence && (
+            <p className="text-[10px] text-slate-400 pl-6">{evidence}</p>
+          )}
+        </div>
+      );
+    };
+
+    return (
+      <div className="space-y-4">
+        {/* Best Offer */}
+        {nbo.specific_product && (
+          <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl p-5 text-white">
+            <div className="flex items-center gap-2 mb-1">
+              <Sparkles className="w-4 h-4 text-yellow-300" />
+              <span className="text-xs font-semibold text-blue-100 uppercase tracking-wide">Top NBO Recommendation</span>
+            </div>
+            <p className="text-xl font-bold">{nbo.specific_product}</p>
+            <p className="text-sm text-blue-100 mt-0.5">Propensity: {nbo.propensity}</p>
+            {nbo.is_upgrade && <span className="mt-2 inline-flex items-center gap-1 text-xs font-semibold bg-white/20 px-2 py-0.5 rounded-full">⬆️ Upgrade Offer</span>}
+            {nbo.low_confidence && <p className="text-xs text-yellow-200 mt-2">⚠️ Low confidence — limited transaction history</p>}
+          </div>
+        )}
+
+        {/* Grouped Propensity Scores */}
         {allScores.length > 0 ? (
-          <div className="space-y-3">
-            {allScores.slice(0, 12).map((item, i) => {
-              const score = item.nbo_score || 0;
-              const pct = Math.round(score * 100);
-              const barColor = pct >= 60 ? '#10B981' : pct >= 40 ? '#3B82F6' : pct >= 20 ? '#F59E0B' : '#94A3B8';
+          <div className="space-y-4">
+            {CATEGORY_CONFIG.map(cat => {
+              const items = grouped[cat.key];
+              if (!items || items.length === 0) return null;
               return (
-                <div key={i} className="space-y-1">
-                  <div className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2">
-                      <span className="text-slate-400 w-4 text-right">{i + 1}.</span>
-                      <span className="font-medium text-slate-800">{item.product_name || item.specific_product}</span>
-                      {item.is_upgrade && <span className="text-[10px] font-bold px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded-full">UPGRADE</span>}
-                    </div>
-                    <span className="font-bold" style={{ color: barColor }}>{pct}%</span>
+                <div key={cat.key} className="bg-white border border-slate-200 rounded-xl p-5">
+                  <h3 className="text-xs font-semibold text-slate-500 mb-4 uppercase tracking-wide">
+                    {cat.label} — Propensity Ranking
+                  </h3>
+                  <div className="space-y-3">
+                    {items.map((item, i) => (
+                      <ScoreRow key={i} item={item} i={i} />
+                    ))}
                   </div>
-                  <ScoreBar score={pct} color={barColor} />
-                  {item.fit_evidence?.length > 0 && (
-                    <p className="text-[10px] text-slate-400 pl-6">{item.fit_evidence[0]}</p>
-                  )}
                 </div>
               );
             })}
           </div>
         ) : (
-          <div className="text-center py-8 space-y-2">
-            {loading ? <RefreshCw className="w-6 h-6 text-blue-400 mx-auto animate-spin" /> : <Target className="w-8 h-8 text-slate-300 mx-auto" />}
-            <p className="text-sm text-slate-400">{loading ? 'Computing propensity scores…' : 'No propensity data available'}</p>
+          <div className="bg-white border border-slate-200 rounded-xl p-5">
+            <div className="text-center py-8 space-y-2">
+              {loading ? <RefreshCw className="w-6 h-6 text-blue-400 mx-auto animate-spin" /> : <Target className="w-8 h-8 text-slate-300 mx-auto" />}
+              <p className="text-sm text-slate-400">{loading ? 'Computing propensity scores…' : 'No propensity data available'}</p>
+            </div>
           </div>
         )}
-      </div>
 
-      {/* NBO reasons */}
-      {nbo.reasons?.length > 0 && (
-        <div className="bg-white border border-slate-200 rounded-xl p-5">
-          <h3 className="text-xs font-semibold text-slate-500 mb-3 uppercase tracking-wide">Why This Offer</h3>
-          <ul className="space-y-2">
-            {nbo.reasons.map((r, i) => (
-              <li key={i} className="flex items-start gap-2 text-sm text-slate-700">
-                <CheckCircle2 className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
-                {r}
-              </li>
+        {/* NBO reasons */}
+        {nbo.reasons?.length > 0 && (
+          <div className="bg-white border border-slate-200 rounded-xl p-5">
+            <h3 className="text-xs font-semibold text-slate-500 mb-3 uppercase tracking-wide">Why This Offer</h3>
+            <ul className="space-y-2">
+              {nbo.reasons.map((r, i) => (
+                <li key={i} className="flex items-start gap-2 text-sm text-slate-700">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
+                  {r}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Draft Message Panel */}
+        <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+          <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Draft Personalised Message</h3>
+          <div className="flex gap-2">
+            {['email', 'sms'].map((ch) => (
+              <button key={ch} onClick={() => setDraftChannel(ch)}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg border cursor-pointer transition-colors ${draftChannel === ch ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>
+                {ch === 'email' ? '✉️ Email' : '💬 SMS'}
+              </button>
             ))}
-          </ul>
-        </div>
-      )}
-
-      {/* Draft Message Panel */}
-      <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-3">
-        <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Draft Personalised Message</h3>
-        <div className="flex gap-2">
-          {['email', 'sms'].map((ch) => (
-            <button key={ch} onClick={() => setDraftChannel(ch)}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg border cursor-pointer transition-colors ${draftChannel === ch ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>
-              {ch === 'email' ? '✉️ Email' : '💬 SMS'}
+            <button onClick={handleDraftMessage} disabled={isDraftingMsg}
+              className="ml-auto px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 text-white border border-blue-600 cursor-pointer hover:bg-blue-700 transition-colors disabled:opacity-60 flex items-center gap-1.5">
+              {isDraftingMsg ? <><RefreshCw className="w-3 h-3 animate-spin" /> Generating…</> : <><Sparkles className="w-3 h-3" /> Generate</>}
             </button>
-          ))}
-          <button onClick={handleDraftMessage} disabled={isDraftingMsg}
-            className="ml-auto px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 text-white border border-blue-600 cursor-pointer hover:bg-blue-700 transition-colors disabled:opacity-60 flex items-center gap-1.5">
-            {isDraftingMsg ? <><RefreshCw className="w-3 h-3 animate-spin" /> Generating…</> : <><Sparkles className="w-3 h-3" /> Generate</>}
-          </button>
-        </div>
-        {draftError && <p className="text-xs text-red-500">{draftError}</p>}
-        {draftResult && (
-          <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
-            {draftResult.subject && <p className="text-xs font-bold text-slate-800 mb-1">📧 {draftResult.subject}</p>}
-            <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-line">{draftResult.body || draftResult.message}</p>
           </div>
-        )}
+          {draftError && <p className="text-xs text-red-500">{draftError}</p>}
+          {draftResult && (
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
+              {draftResult.subject && <p className="text-xs font-bold text-slate-800 mb-1">📧 {draftResult.subject}</p>}
+              <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-line">{draftResult.body || draftResult.message}</p>
+            </div>
+          )}
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const TAB_CONTENT = {
     overview: <OverviewTab />,
