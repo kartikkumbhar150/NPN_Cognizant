@@ -81,14 +81,15 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:5173", 
-        "http://127.0.0.1:5173", 
-        "http://localhost:5174", 
-        "http://localhost:5175", 
-        "http://localhost:5176", 
-        "http://localhost:3000"
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://localhost:5175",
+        "http://localhost:5176",
+        "http://localhost:3000",
+        "https://npnbank-backend.duckdns.org",
     ],
-    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:[0-9]+)?",
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:[0-9]+)?|https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -111,10 +112,14 @@ def _clean_groq_json(raw: str) -> str:
     """
     # 1. Remove <think>...</think> blocks (may be multi-line)
     raw = _re_global.sub(r"<think>.*?</think>", "", raw, flags=_re_global.DOTALL)
-    # 2. Remove markdown code fences  ```json ... ```
-    raw = _re_global.sub(r"^```(?:json)?\s*", "", raw, flags=_re_global.MULTILINE)
-    raw = _re_global.sub(r"```\s*$", "", raw, flags=_re_global.MULTILINE)
-    return raw.strip()
+    raw = raw.strip()
+    
+    # 2. Robustly extract JSON object or array ignoring conversational preamble
+    match = _re_global.search(r'(\{.*\}|\[.*\])', raw, flags=_re_global.DOTALL)
+    if match:
+        return match.group(1).strip()
+        
+    return raw
 
 
 pwd_context = CryptContext(schemes=["sha256_crypt"], deprecated="auto")
@@ -954,7 +959,7 @@ OUTPUT: Return valid JSON only:
                         ],
                         model="qwen/qwen3.6-27b",
                         temperature=0.7,
-                        max_tokens=1500,
+                        max_tokens=8000,
                     )
                     raw = _clean_groq_json(resp.choices[0].message.content)
                     raw = _re.sub(r"^```(?:json)?\s*", "", raw, flags=_re.MULTILINE)
@@ -1103,7 +1108,7 @@ OUTPUT: Return valid JSON only:
                         ],
                         model="qwen/qwen3.6-27b",
                         temperature=0.7,
-                        max_tokens=300,
+                        max_tokens=8000,
                     )
                     raw = _clean_groq_json(resp.choices[0].message.content)
                     raw = _re.sub(r"^```(?:json)?\s*", "", raw, flags=_re.MULTILINE)
@@ -1343,7 +1348,7 @@ OUTPUT: Return only a valid JSON array:
                 ],
                 model="qwen/qwen3.6-27b",
                 temperature=0.7,
-                max_tokens=1000,
+                max_tokens=8000,
             )
             raw = _clean_groq_json(resp.choices[0].message.content)
             raw = _re.sub(r"^```(?:json)?\s*", "", raw, flags=_re.MULTILINE)
@@ -1627,7 +1632,7 @@ OUTPUT: Return valid JSON with exactly these fields:
                 ],
                 model="qwen/qwen3.6-27b",
                 temperature=0.7,
-                max_tokens=2000,
+                max_tokens=8000,
             )
             content = _clean_groq_json(response.choices[0].message.content)
             # Strip markdown fences if present
@@ -1949,7 +1954,7 @@ Return valid JSON:
                 ],
                 model="qwen/qwen3.6-27b",
                 temperature=0.3,
-                max_tokens=2000,
+                max_tokens=8000,
             )
             content = _clean_groq_json(response.choices[0].message.content)
             content = _re.sub(r"^```(?:json)?\s*", "", content, flags=_re.MULTILINE)

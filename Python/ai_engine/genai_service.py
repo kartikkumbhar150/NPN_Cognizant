@@ -220,7 +220,7 @@ OUTPUT FORMAT: Return ONLY valid JSON matching this exact schema:
                     ],
                     model="qwen/qwen3.6-27b",
                     temperature=0.7,
-                    max_tokens=2000,
+                    max_tokens=8000,
                 )
                 content = response.choices[0].message.content.strip()
                 parsed  = self._extract_json(content)
@@ -240,22 +240,19 @@ OUTPUT FORMAT: Return ONLY valid JSON matching this exact schema:
     def _extract_json(self, text: str) -> dict:
         """Robustly extract a JSON object from model output, even if wrapped in markdown."""
         import re
-        # Remove markdown code fences if present
-        text = re.sub(r"^```(?:json)?\s*", "", text.strip(), flags=re.MULTILINE)
-        text = re.sub(r"```\s*$", "", text.strip(), flags=re.MULTILINE)
-        # Try direct parse first
-        try:
-            return json.loads(text.strip())
-        except json.JSONDecodeError:
-            pass
-        # Try to extract first JSON object using regex
-        match = re.search(r"\{[\s\S]*?\}", text)
+        # Remove <think> blocks
+        text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+        text = text.strip()
+        
+        # Robustly extract JSON object ignoring conversational preamble
+        match = re.search(r'(\{.*\})', text, flags=re.DOTALL)
         if match:
-            try:
-                return json.loads(match.group())
-            except json.JSONDecodeError:
-                pass
-        return {}
+            text = match.group(1).strip()
+            
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            return {}
 
     def _mock_llm_call(self, first_name, product, reasons, channel, ctx=None):
         """Structured mock fallback when no LLM is available or it fails."""

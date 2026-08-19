@@ -9,3 +9,7 @@ fastapi
 uvicorn
 twilio
 pydantic
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart
+PyYAML
