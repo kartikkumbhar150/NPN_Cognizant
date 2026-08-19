@@ -204,7 +204,7 @@ export default function Customer360({ customer, onBack, onNavigateCampaigns }) {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="md:col-span-2 bg-white border border-slate-200 rounded-xl p-5 space-y-3">
           <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Profile</h3>
-          <div className="grid grid-cols-2 gap-3 text-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
             {[
               ['Age', customer.age],
               ['Gender', customer.gender],
@@ -353,7 +353,7 @@ export default function Customer360({ customer, onBack, onNavigateCampaigns }) {
         <p className="text-[10px] text-slate-400 mt-1">* Monthly spend estimates based on 90-day transaction window. Blue = current month.</p>
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         {[
           { label: 'Total Spend (90d)', value: fmtCur(totalSpend90) },
           { label: 'Transactions (90d)', value: w90.transaction_count || 0 },
@@ -385,7 +385,7 @@ export default function Customer360({ customer, onBack, onNavigateCampaigns }) {
       {/* Window comparison */}
       <div className="bg-white border border-slate-200 rounded-xl p-5">
         <h3 className="text-xs font-semibold text-slate-500 mb-4 uppercase tracking-wide">Spending Windows</h3>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {[30, 90, 365].map((days) => {
             const w = windows[String(days)] || {};
             return (
@@ -408,7 +408,7 @@ export default function Customer360({ customer, onBack, onNavigateCampaigns }) {
     return (
       <div className="space-y-4">
         {/* Summary */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="bg-white border border-slate-200 rounded-xl p-4">
             <p className="text-xs text-slate-500">Total Credit Limit</p>
             <p className="text-lg font-bold text-slate-900">{fmtCur(holdings.total_credit_limit)}</p>
@@ -464,7 +464,7 @@ export default function Customer360({ customer, onBack, onNavigateCampaigns }) {
     const activeLoans = loans.filter(l => String(l.loan_status || '').toLowerCase() === 'active');
     return (
       <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="bg-white border border-slate-200 rounded-xl p-4">
             <p className="text-xs text-slate-500">Total Outstanding Debt</p>
             <p className="text-lg font-bold text-red-600">{fmtCur(holdings.total_outstanding_debt)}</p>
@@ -484,7 +484,7 @@ export default function Customer360({ customer, onBack, onNavigateCampaigns }) {
                     <span className="text-sm font-bold text-slate-900">{loan.loan_category || loan.loan_type || 'Loan'}</span>
                     <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Active</span>
                   </div>
-                  <div className="grid grid-cols-3 gap-2 text-xs">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
                     <div><p className="text-slate-400">Outstanding</p><p className="font-bold text-slate-800">{fmtCur(loan.outstanding_amount || loan.loan_amount)}</p></div>
                     <div><p className="text-slate-400">EMI</p><p className="font-bold text-slate-800">{fmtCur(loan.emi_amount || 0)}</p></div>
                     <div><p className="text-slate-400">Rate</p><p className="font-bold text-slate-800">{loan.interest_rate || '—'}%</p></div>
@@ -503,7 +503,7 @@ export default function Customer360({ customer, onBack, onNavigateCampaigns }) {
     const investments = rawHoldings.investments || [];
     return (
       <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="bg-white border border-slate-200 rounded-xl p-4">
             <p className="text-xs text-slate-500">Total Investment Value</p>
             <p className="text-lg font-bold text-emerald-600">{fmtCur(holdings.total_assets_value)}</p>
@@ -523,7 +523,7 @@ export default function Customer360({ customer, onBack, onNavigateCampaigns }) {
                     <span className="text-sm font-bold text-slate-900">{inv.investment_type || inv.fund_name || 'Investment'}</span>
                     <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">{inv.investment_status || 'Active'}</span>
                   </div>
-                  <div className="grid grid-cols-3 gap-2 text-xs">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
                     <div><p className="text-slate-400">Current Value</p><p className="font-bold text-emerald-800">{fmtCur(inv.current_value)}</p></div>
                     <div><p className="text-slate-400">Invested</p><p className="font-bold text-slate-700">{fmtCur(inv.total_invested_amount || inv.invested_amount || 0)}</p></div>
                     <div><p className="text-slate-400">Monthly SIP</p><p className="font-bold text-blue-700">{fmtCur(inv.monthly_sip_amount || inv.sip_amount || 0)}</p></div>
@@ -548,7 +548,7 @@ export default function Customer360({ customer, onBack, onNavigateCampaigns }) {
     const activePolicies = policies.filter(p => !['lapsed', 'cancelled', 'expired'].includes(String(p.policy_status || '').toLowerCase()));
     return (
       <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="bg-white border border-slate-200 rounded-xl p-4">
             <p className="text-xs text-slate-500">Total Cover</p>
             <p className="text-lg font-bold text-blue-600">{fmtCur(holdings.total_insurance_cover)}</p>
@@ -573,7 +573,7 @@ export default function Customer360({ customer, onBack, onNavigateCampaigns }) {
                       <span className="text-sm font-bold text-slate-900">{pol.insurance_type || 'Insurance'} Insurance</span>
                       <span className={`ml-auto text-xs font-semibold px-2 py-0.5 rounded-full ${isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>{pol.policy_status || 'Unknown'}</span>
                     </div>
-                    <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
                       <div><p className="text-slate-400">Sum Insured</p><p className="font-bold text-slate-800">{fmtCur(pol.sum_insured || 0)}</p></div>
                       <div><p className="text-slate-400">Premium</p><p className="font-bold text-slate-800">{fmtCur(pol.premium_amount || 0)}/yr</p></div>
                       <div><p className="text-slate-400">Expiry</p><p className="font-bold text-slate-800">{pol.policy_end_date ? new Date(pol.policy_end_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</p></div>

@@ -366,7 +366,7 @@ export default function Campaigns({ initialProduct, initialSegment, onNavigateAn
                         <span className="text-xs">Analysing upcoming events…</span>
                       </div>
                     ) : suggestions.length > 0 ? (
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         {suggestions.map((s, i) => (
                           <button
                             key={i}
@@ -397,7 +397,7 @@ export default function Campaigns({ initialProduct, initialSegment, onNavigateAn
                   {PRODUCT_GROUPS.map((group) => (
                     <div key={group.group}>
                       <p className="text-xs font-bold text-slate-500 mb-2">{group.group}</p>
-                      <div className="grid grid-cols-4 gap-2">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                         {group.items.map((p) => (
                           <div
                             key={p.value}
@@ -450,7 +450,7 @@ export default function Campaigns({ initialProduct, initialSegment, onNavigateAn
               </div>
 
               {/* Age Distribution */}
-              <div className="grid grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {Object.entries(ageDistribution).map(([label, count]) => {
                   const colors = {
                     'Gen Z (≤25)': 'bg-pink-50 border-pink-200 text-pink-700',
@@ -488,7 +488,7 @@ export default function Campaigns({ initialProduct, initialSegment, onNavigateAn
               </div>
 
               {/* Customer Table */}
-              <div className="border border-slate-200 rounded-xl overflow-hidden max-h-72 overflow-y-auto">
+              <div className="border border-slate-200 rounded-xl overflow-hidden max-h-72 overflow-y-auto overflow-x-auto -mx-4 sm:mx-0">
                 <table className="w-full text-xs">
                   <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold uppercase tracking-wider text-slate-500 sticky top-0">
                     <tr>
@@ -567,7 +567,7 @@ export default function Campaigns({ initialProduct, initialSegment, onNavigateAn
               {/* Channel Selection */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-2 uppercase tracking-wider">Delivery Channel</label>
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {CHANNELS.map((ch) => (
                     <div
                       key={ch.id}
@@ -595,7 +595,7 @@ export default function Campaigns({ initialProduct, initialSegment, onNavigateAn
               {/* Age Strategy */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-2 uppercase tracking-wider">Age-Generation Marketing Strategy</label>
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {Object.entries(AGE_GROUP_CONFIG).map(([key, cfg]) => {
                     const Icon = cfg.icon;
                     return (

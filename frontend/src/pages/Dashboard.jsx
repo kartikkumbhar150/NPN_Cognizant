@@ -372,7 +372,7 @@ export default function Dashboard({ onNavigate, onSelectCustomer, onStartCampaig
             <ChevronRight className="w-3.5 h-3.5" />
           </button>
         </div>
-        <div className="overflow-x-auto flex-1">
+        <div className="overflow-x-auto flex-1 -mx-5 sm:mx-0">
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold uppercase tracking-wider text-slate-500">
               <tr>

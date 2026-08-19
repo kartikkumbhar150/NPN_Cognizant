@@ -301,7 +301,7 @@ export default function Segments({ onSelectSegmentFilter, onStartCampaign }) {
             </p>
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto -mx-5 sm:mx-0">
             <table className="w-full text-xs">
               <thead>
                 <tr>
@@ -396,7 +396,7 @@ export default function Segments({ onSelectSegmentFilter, onStartCampaign }) {
                     </div>
                   </div>
                   <p className="text-xs text-slate-600 leading-relaxed">{seg.description}</p>
-                  <div className="grid grid-cols-2 gap-2 bg-slate-50 rounded-lg p-2.5 border border-slate-100">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-slate-50 rounded-lg p-2.5 border border-slate-100">
                     <div>
                       <p className="text-[10px] text-slate-400 uppercase font-bold tracking-wide">Est. Spending</p>
                       <p className="text-xs font-extrabold text-slate-900">{seg.avgSpending}/mo</p>
@@ -413,7 +413,7 @@ export default function Segments({ onSelectSegmentFilter, onStartCampaign }) {
                     <p className="text-xs text-purple-800 leading-snug">{seg.aiOpportunity}</p>
                   </div>
                 </div>
-                <div className="p-3 bg-slate-50 border-t border-slate-100 grid grid-cols-2 gap-2">
+                <div className="p-3 bg-slate-50 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <button onClick={() => onSelectSegmentFilter && onSelectSegmentFilter(seg.name)}
                     className="py-1.5 text-xs font-bold bg-white border border-slate-200 text-slate-700 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer flex items-center justify-center gap-1">
                     <Users className="w-3.5 h-3.5" /> View

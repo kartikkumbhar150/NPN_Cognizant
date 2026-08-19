@@ -129,7 +129,7 @@ export default function Login() {
             <p className="text-xs text-slate-500 text-center font-medium uppercase tracking-wider">
               Quick Demo Access
             </p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <button
                 type="button"
                 id="demo-employee-btn"
