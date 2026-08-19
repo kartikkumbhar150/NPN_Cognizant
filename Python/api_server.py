@@ -70,6 +70,7 @@ from ai_engine.explainability_engine import ExplainabilityEngine
 from ai_engine.marketing_guard import MarketingGuard
 from ai_engine.clustering_engine import ClusteringEngine
 from ai_engine.indian_calendar import get_festival_context_for_prompt, get_campaign_suggestions_by_events
+from marketing_templates import build_html_email, build_sms_body, pick_marketing_image
 
 # ── App setup ─────────────────────────────────────────────────────────────────
 app = FastAPI(
@@ -110,16 +111,67 @@ def _clean_groq_json(raw: str) -> str:
     and any leading/trailing whitespace — leaving pure JSON ready to parse.
     Works for qwen3.x, deepseek-r1, and any other chain-of-thought models.
     """
-    # 1. Remove <think>...</think> blocks (may be multi-line)
+    # 1. Remove closed <think>...</think> blocks (may be multi-line)
     raw = _re_global.sub(r"<think>.*?</think>", "", raw, flags=_re_global.DOTALL)
+    
+    # 2. Handle UNCLOSED <think> block (model ran out of tokens while thinking)
+    if "<think>" in raw:
+        raw = raw[:raw.index("<think>")]
+    if "</think>" in raw:
+        raw = raw[raw.rindex("</think>") + len("</think>"):]
+    
     raw = raw.strip()
     
-    # 2. Robustly extract JSON object or array ignoring conversational preamble
+    # 3. Strip markdown code fences
+    raw = _re_global.sub(r"^```(?:json)?\s*", "", raw, flags=_re_global.MULTILINE)
+    raw = _re_global.sub(r"```\s*$", "", raw, flags=_re_global.MULTILINE)
+    raw = raw.strip()
+    
+    # 4. Robustly extract JSON object or array ignoring conversational preamble
     match = _re_global.search(r'(\{.*\}|\[.*\])', raw, flags=_re_global.DOTALL)
     if match:
         return match.group(1).strip()
         
     return raw
+
+
+import json as _json_global
+
+def _safe_parse_groq_json(raw_content: str, context: str = "") -> dict | list | None:
+    """
+    Clean Groq output and parse JSON. Returns None if parsing fails
+    instead of raising — callers should use their fallback when None is returned.
+    """
+    try:
+        cleaned = _clean_groq_json(raw_content or "")
+        if not cleaned:
+            print(f"[GROQ] Empty response after cleaning{' — ' + context if context else ''}")
+            return None
+        return _json_global.loads(cleaned)
+    except Exception as e:
+        print(f"[GROQ] JSON parse error{' — ' + context if context else ''}: {e}")
+        # Log first 200 chars to help debug
+        snippet = (raw_content or "")[:200].replace("\n", " ")
+        print(f"[GROQ] Raw snippet: {snippet}")
+        return None
+
+
+# ── Token-safe prompt trimmer ─────────────────────────────────────────────────
+# qwen/qwen3.6-27b context window = 32 768 tokens.
+# Rule of thumb: 1 token ≈ 4 chars (English).  We budget:
+#   - System message : ~200 tokens
+#   - Output reserved: 1 200 tokens
+#   - Input prompt   : max 6 400 tokens  →  ~25 600 chars
+_PROMPT_MAX_CHARS = 25_600   # hard ceiling for any user-role prompt
+
+def _trim_prompt(text: str, max_chars: int = _PROMPT_MAX_CHARS) -> str:
+    """Truncate *text* to *max_chars* so we never blow the model context window."""
+    if len(text) <= max_chars:
+        return text
+    # Keep the first 60 % and the last 40 % so the end (output schema) is preserved
+    keep_head = int(max_chars * 0.6)
+    keep_tail = max_chars - keep_head
+    return text[:keep_head] + "\n...[content trimmed for length]...\n" + text[-keep_tail:]
 
 
 pwd_context = CryptContext(schemes=["sha256_crypt"], deprecated="auto")
@@ -152,6 +204,20 @@ def get_db_connection():
         raise HTTPException(status_code=500, detail="Database not configured")
     return db_engine.connect()
 
+import redis
+import pickle
+
+REDIS_URL = os.getenv("REDIS_URL")
+redis_client = None
+if REDIS_URL:
+    try:
+        redis_client = redis.Redis.from_url(REDIS_URL)
+        redis_client.ping()
+        print("Connected to Redis successfully.")
+    except Exception as e:
+        print(f"Warning: Failed to connect to Redis: {e}")
+        redis_client = None
+
 # ── Lazy-loaded data / engines ────────────────────────────────────────────────
 _data_cache = {}
 _engine_lock = __import__('threading').Lock()
@@ -164,27 +230,66 @@ def get_engines():
         # Double-check inside lock in case another thread beat us here
         if _data_cache:
             return _data_cache
-        print("Loading data and initialising AI engines v3.0...")
-        print("- load_customers...")
-        customers_df    = load_customers()
-        print(f"  -> Fetched {len(customers_df)} customers from Supabase")
-        print("- load_transactions...")
-        transactions_df = load_transactions()
-        print("- load_credit_cards...")
-        credit_cards_df = load_credit_cards()
-        print("- load_loan_products...")
-        loans_df        = load_loan_products()
-        print("- load_investment_products...")
-        investments_df  = load_investment_products()
-        print("- load_insurance_products...")
-        insurance_df    = load_insurance_products()
-        print("- load_customer_holdings...")
-        holdings_data   = load_customer_holdings()
+        cached_data = None
+        if redis_client:
+            try:
+                cached_bytes = redis_client.get("npn_bank_data_bundle")
+                if cached_bytes:
+                    print("Loading data from Redis cache...")
+                    cached_data = pickle.loads(cached_bytes)
+            except Exception as e:
+                print(f"Redis cache load error: {e}")
+
+        if cached_data:
+            customers_df    = cached_data["customers_df"]
+            transactions_df = cached_data["transactions_df"]
+            credit_cards_df = cached_data["credit_cards_df"]
+            loans_df        = cached_data["loans_df"]
+            investments_df  = cached_data["investments_df"]
+            insurance_df    = cached_data["insurance_df"]
+            holdings_data   = cached_data["holdings_data"]
+            customer_360    = cached_data["customer_360"]
+        else:
+            print("Loading data from Supabase and initialising AI engines v3.0...")
+            print("- load_customers...")
+            customers_df    = load_customers()
+            print(f"  -> Fetched {len(customers_df)} customers from Supabase")
+            print("- load_transactions...")
+            transactions_df = load_transactions()
+            print("- load_credit_cards...")
+            credit_cards_df = load_credit_cards()
+            print("- load_loan_products...")
+            loans_df        = load_loan_products()
+            print("- load_investment_products...")
+            investments_df  = load_investment_products()
+            print("- load_insurance_products...")
+            insurance_df    = load_insurance_products()
+            print("- load_customer_holdings...")
+            holdings_data   = load_customer_holdings()
+            customer_360    = load_customer_360_json()
+
+            if redis_client:
+                try:
+                    print("Saving data bundle to Redis (TTL = 4 hours)...")
+                    bundle = {
+                        "customers_df": customers_df,
+                        "transactions_df": transactions_df,
+                        "credit_cards_df": credit_cards_df,
+                        "loans_df": loans_df,
+                        "investments_df": investments_df,
+                        "insurance_df": insurance_df,
+                        "holdings_data": holdings_data,
+                        "customer_360": customer_360
+                    }
+                    # 14400 seconds = 4 hours
+                    redis_client.setex("npn_bank_data_bundle", 14400, pickle.dumps(bundle))
+                except Exception as e:
+                    print(f"Redis save error: {e}")
 
         _data_cache["customers_df"]    = customers_df
         _data_cache["transactions_df"] = transactions_df
         _data_cache["holdings_data"]   = holdings_data
-        _data_cache["customer_360"]    = load_customer_360_json()
+        _data_cache["customer_360"]    = customer_360
         
         print("- Initialising v3 Engines...")
         print("  - FeatureEngine...")
@@ -818,14 +923,16 @@ Context-aware triggers to weave into the message (use only what's relevant):
 
 # ── Email sending helpers ────────────────────────────────────────────────────
 
-def _send_email_smtp(to_email: str, subject: str, body: str, sender: str, password: str) -> bool:
-    """Send a single email via Gmail SMTP. Returns True on success."""
+def _send_email_smtp(to_email: str, subject: str, html_body: str, plain_body: str, sender: str, password: str) -> bool:
+    """Send a single HTML email via Gmail SMTP. Returns True on success."""
     try:
         msg = MIMEMultipart("alternative")
         msg["Subject"] = subject
         msg["From"] = f"NPN Bank Marketing <{sender}>"
         msg["To"] = to_email
-        msg.attach(MIMEText(body, "plain", "utf-8"))
+        # Attach plain text first (fallback), then HTML (preferred)
+        msg.attach(MIMEText(plain_body, "plain", "utf-8"))
+        msg.attach(MIMEText(html_body, "html", "utf-8"))
         with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
             server.ehlo()
             server.starttls()
@@ -955,18 +1062,20 @@ OUTPUT: Return valid JSON only:
                     resp = groq_client.chat.completions.create(
                         messages=[
                             {"role": "system", "content": "You are a banking marketing API. Return only valid JSON."},
-                            {"role": "user",   "content": prompt},
+                            {"role": "user",   "content": _trim_prompt(prompt)},
                         ],
                         model="qwen/qwen3.6-27b",
                         temperature=0.7,
-                        max_tokens=8000,
+                        max_tokens=1200,
                     )
-                    raw = _clean_groq_json(resp.choices[0].message.content)
-                    raw = _re.sub(r"^```(?:json)?\s*", "", raw, flags=_re.MULTILINE)
-                    raw = _re.sub(r"```\s*$",        "", raw, flags=_re.MULTILINE).strip()
-                    parsed  = _json.loads(raw)
-                    subject = parsed.get("subject", subject)
-                    body    = parsed.get("body", body)
+                    parsed = _safe_parse_groq_json(resp.choices[0].message.content, f"EMAIL {cid}")
+                    if parsed:
+                        subject = parsed.get("subject", subject)
+                        body    = parsed.get("body", body)
+                    else:
+                        fb      = _fallback_personalised_message(first_name, product, age_group, "email")
+                        subject = fb.get("subject", subject)
+                        body    = fb.get("body", body)
                 except Exception as gen_err:
                     print(f"[EMAIL] Groq error for {cid}: {gen_err} — using fallback")
                     fb      = _fallback_personalised_message(first_name, product, age_group, "email")
@@ -977,8 +1086,16 @@ OUTPUT: Return valid JSON only:
                 subject = fb.get("subject", subject)
                 body    = fb.get("body", body)
 
-            # Send the email
-            ok = _send_email_smtp(cust_email, subject, body, GMAIL_SENDER, GMAIL_APP_PASSWORD)
+            # Build rich HTML email with inline image + product facts
+            html_body = build_html_email(
+                first_name=first_name,
+                product=product,
+                body_text=body,
+                age_group=age_group,
+            )
+
+            # Send as HTML email
+            ok = _send_email_smtp(cust_email, subject, html_body, body, GMAIL_SENDER, GMAIL_APP_PASSWORD)
             if ok:
                 sent_count += 1
                 print(f"[EMAIL] ✅ Sent to {cust_email} ({first_name} {last_name})")
@@ -1104,24 +1221,32 @@ OUTPUT: Return valid JSON only:
                     resp = groq_client.chat.completions.create(
                         messages=[
                             {"role": "system", "content": "You are a banking marketing API. Return only valid JSON."},
-                            {"role": "user",   "content": prompt},
+                            {"role": "user",   "content": _trim_prompt(prompt)},
                         ],
                         model="qwen/qwen3.6-27b",
                         temperature=0.7,
-                        max_tokens=8000,
+                        max_tokens=1200,
                     )
-                    raw = _clean_groq_json(resp.choices[0].message.content)
-                    raw = _re.sub(r"^```(?:json)?\s*", "", raw, flags=_re.MULTILINE)
-                    raw = _re.sub(r"```\s*$",        "", raw, flags=_re.MULTILINE).strip()
-                    parsed   = _json.loads(raw)
-                    sms_body = parsed.get("body", sms_body)[:160]  # enforce 160-char limit
+                    parsed = _safe_parse_groq_json(resp.choices[0].message.content, f"SMS {cid}")
+                    if parsed:
+                        raw_sms = parsed.get("body", sms_body)
+                    else:
+                        fb = _fallback_personalised_message(first_name, product, age_group, "sms")
+                        raw_sms = fb.get("body", sms_body)
                 except Exception as gen_err:
                     print(f"[SMS] Groq error for {cid}: {gen_err} — using fallback")
                     fb = _fallback_personalised_message(first_name, product, age_group, "sms")
-                    sms_body = fb.get("body", sms_body)[:160]
+                    raw_sms = fb.get("body", sms_body)
             else:
                 fb = _fallback_personalised_message(first_name, product, age_group, "sms")
-                sms_body = fb.get("body", sms_body)[:160]
+                raw_sms = fb.get("body", sms_body)
+
+            # Build punchy SMS using template (enforces 160-char limit)
+            sms_body = build_sms_body(
+                first_name=first_name,
+                product=product,
+                body_text=raw_sms,
+            )
 
             # Send the SMS
             ok = _send_sms_twilio(mobile, sms_body, TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER)
@@ -1344,16 +1469,15 @@ OUTPUT: Return only a valid JSON array:
             resp = genai.client.chat.completions.create(
                 messages=[
                     {"role": "system", "content": "You are a banking marketing API. Return only valid JSON."},
-                    {"role": "user", "content": prompt},
+                    {"role": "user", "content": _trim_prompt(prompt)},
                 ],
                 model="qwen/qwen3.6-27b",
                 temperature=0.7,
-                max_tokens=8000,
+                max_tokens=1200,
             )
-            raw = _clean_groq_json(resp.choices[0].message.content)
-            raw = _re.sub(r"^```(?:json)?\s*", "", raw, flags=_re.MULTILINE)
-            raw = _re.sub(r"```\s*$", "", raw, flags=_re.MULTILINE).strip()
-            llm_suggestions = _json.loads(raw)
+            parsed = _safe_parse_groq_json(resp.choices[0].message.content, "SUGGESTIONS")
+            if parsed and isinstance(parsed, list):
+                llm_suggestions = parsed
     except Exception as exc:
         print(f"[SUGGESTIONS] Groq error: {exc} — falling back to calendar-based suggestions")
 
@@ -1628,17 +1752,15 @@ OUTPUT: Return valid JSON with exactly these fields:
             response = groq_client.chat.completions.create(
                 messages=[
                     {"role": "system", "content": "You are a banking marketing API. Return only valid JSON."},
-                    {"role": "user", "content": prompt},
+                    {"role": "user", "content": _trim_prompt(prompt)},
                 ],
                 model="qwen/qwen3.6-27b",
                 temperature=0.7,
-                max_tokens=8000,
+                max_tokens=1200,
             )
-            content = _clean_groq_json(response.choices[0].message.content)
-            # Strip markdown fences if present
-            content = _re.sub(r"^```(?:json)?\s*", "", content, flags=_re.MULTILINE)
-            content = _re.sub(r"```\s*$", "", content, flags=_re.MULTILINE).strip()
-            parsed = _json.loads(content)
+            parsed = _safe_parse_groq_json(response.choices[0].message.content, "PERSONALISED_MSG")
+            if not parsed:
+                parsed = _fallback_personalised_message(first_name, req.product, age_group, req.channel)
         except Exception as e:
             print(f"Personalised message generation error: {e}")
             parsed = _fallback_personalised_message(first_name, req.product, age_group, req.channel)
@@ -1950,16 +2072,15 @@ Return valid JSON:
             response = genai_service.client.chat.completions.create(
                 messages=[
                     {"role": "system", "content": "You are a banking marketing analytics AI. Return only valid JSON."},
-                    {"role": "user", "content": prompt},
+                    {"role": "user", "content": _trim_prompt(prompt)},
                 ],
                 model="qwen/qwen3.6-27b",
                 temperature=0.3,
-                max_tokens=8000,
+                max_tokens=1200,
             )
-            content = _clean_groq_json(response.choices[0].message.content)
-            content = _re.sub(r"^```(?:json)?\s*", "", content, flags=_re.MULTILINE)
-            content = _re.sub(r"```\s*$", "", content, flags=_re.MULTILINE).strip()
-            return _json.loads(content)
+            parsed = _safe_parse_groq_json(response.choices[0].message.content, "INSIGHTS")
+            if parsed:
+                return parsed
         except Exception as e:
             print(f"Campaign insights error: {e}")
 
@@ -2216,6 +2337,160 @@ def generate_campaign_content(
 @app.get("/health", tags=["System"])
 def health():
     return {"status": "ok", "service": "NPN Bank Employee API"}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Chatbot  — POST /chatbot/ask
+# Standalone endpoint: phone_number + message → Groq-powered personalized answer
+# ═══════════════════════════════════════════════════════════════════════════════
+
+import re as _re_chat
+
+def _strip_think(text: str) -> str:
+    """Remove <think>...</think> blocks from qwen3 chain-of-thought output."""
+    text = _re_chat.sub(r"<think>[\s\S]*?</think>", "", text)
+    if "<think>" in text:
+        text = text[:text.index("<think>")]
+    if "</think>" in text:
+        text = text[text.rindex("</think>") + len("</think>"):]
+    return text.strip()
+
+def _normalise_phone(phone: str) -> str:
+    digits = _re_chat.sub(r"\D", "", phone)
+    return digits[-10:] if len(digits) >= 10 else digits
+
+class ChatbotAskRequest(BaseModel):
+    message: str
+    phone_number: Optional[str] = None
+    customer_id: Optional[str] = None
+    conversation_id: Optional[str] = None
+
+@app.post("/chatbot/ask", tags=["Chatbot"])
+def chatbot_ask(req: ChatbotAskRequest):
+    """
+    Bank marketing chatbot endpoint.
+
+    Pass phone_number OR customer_id. The bot fetches the customer's C360
+    profile, builds context (segment, income, products held, financial gaps,
+    life events) and asks Groq to generate a warm, concise, personalized answer.
+    """
+    engines = get_engines()
+    customers_df: "pd.DataFrame" = engines["customers_df"]
+
+    # ── 1. Resolve phone → customer_id ───────────────────────────────────────
+    resolved_id = req.customer_id
+    if req.phone_number and not resolved_id:
+        if "mobile_number" not in customers_df.columns:
+            raise HTTPException(status_code=400, detail="mobile_number column not found in customers data")
+        norm = _normalise_phone(req.phone_number)
+        mask = customers_df["mobile_number"].astype(str).apply(
+            lambda x: _normalise_phone(x) == norm
+        )
+        matches = customers_df[mask]
+        if matches.empty:
+            raise HTTPException(status_code=404, detail=f"No customer found for phone ending in {norm[-4:]}")
+        resolved_id = str(matches.iloc[0]["customer_id"])
+
+    # ── 2. Build customer context (PII-free) ─────────────────────────────────
+    customer_summary = ""
+    if resolved_id:
+        row = customers_df[customers_df["customer_id"] == resolved_id]
+        if not row.empty:
+            d = row.iloc[0].to_dict()
+            parts = []
+            if d.get("age"):            parts.append(f"Age: {d['age']}")
+            if d.get("customer_segment_type"): parts.append(f"Segment: {d['customer_segment_type']}")
+            if d.get("credit_score"):   parts.append(f"Credit Score: {d['credit_score']}")
+            if d.get("annual_income"):  parts.append(f"Annual Income: ₹{int(d['annual_income']):,}")
+
+            try:
+                fe: "FeatureEngine" = engines["feature_engine"]
+                feat = fe.compute(resolved_id, d)
+                if getattr(feat, "monthly_income_avg", None):
+                    parts.append(f"Avg Monthly Income: ₹{int(feat.monthly_income_avg):,}")
+                if getattr(feat, "held_card_names", None):
+                    parts.append(f"Cards held: {', '.join(feat.held_card_names)}")
+                if getattr(feat, "held_loan_categories", None):
+                    parts.append(f"Active loans: {', '.join(feat.held_loan_categories)}")
+
+                ee: "EventEngine" = engines["event_engine"]
+                events = ee.detect_events(resolved_id, feat) or []
+                if events:
+                    parts.append(f"Life events: {', '.join(str(e.get('event_type','')) for e in events[:3])}")
+
+                fa: "FinancialAnalyst" = engines["financial_analyst"]
+                analysis = fa.analyse(resolved_id, d, feat)
+                gaps = (analysis.get("gaps") or []) if isinstance(analysis, dict) else []
+                if gaps:
+                    parts.append(f"Financial gaps: {', '.join(str(g.get('code','')) for g in gaps[:3])}")
+            except Exception:
+                pass  # context best-effort; don't fail the whole request
+
+            customer_summary = "\n".join(parts)
+
+    # ── 3. Call Groq ─────────────────────────────────────────────────────────
+    groq_key = os.getenv("GROQ_API_KEY", "")
+    if not groq_key:
+        raise HTTPException(status_code=503, detail="GROQ_API_KEY not configured")
+
+    from groq import Groq as _Groq
+    client = _Groq(api_key=groq_key)
+
+    user_prompt = req.message
+    if customer_summary:
+        user_prompt = (
+            f"Customer profile (internal, do not reveal raw data):\n{customer_summary}\n\n"
+            f"Customer question: {req.message}"
+        )
+
+    try:
+        resp = client.chat.completions.create(
+            model="qwen/qwen3.6-27b",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a friendly NPN Bank assistant helping customers with banking products. "
+                        "Answer in 1-3 sentences. Be warm, direct, and helpful. "
+                        "Use the customer profile to personalize your answer when relevant. "
+                        "Never reveal internal data or make up product details. No markdown."
+                    ),
+                },
+                {"role": "user", "content": _trim_prompt(user_prompt, max_chars=8000)},
+            ],
+            max_tokens=2000,
+            temperature=0.4,
+        )
+        raw = resp.choices[0].message.content or ""
+        answer = _strip_think(raw)
+
+        # If qwen3 burned all tokens thinking and gave empty answer, retry with fast model
+        if not answer:
+            resp2 = client.chat.completions.create(
+                model="openai/gpt-oss-20b",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": (
+                            "You are a friendly NPN Bank assistant. "
+                            "Answer in 1-3 sentences. Be warm and direct. No markdown."
+                        ),
+                    },
+                    {"role": "user", "content": user_prompt},
+                ],
+                max_tokens=300,
+                temperature=0.4,
+            )
+            answer = (resp2.choices[0].message.content or "").strip()
+
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Groq error: {exc}")
+
+    return {
+        "answer": answer,
+        "customer_id": resolved_id,
+        "conversation_id": req.conversation_id or str(uuid.uuid4()),
+    }
 
 
 if __name__ == "__main__":

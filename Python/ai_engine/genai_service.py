@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+import re as _re_gs
 from datetime import datetime
 from groq import Groq
 from dotenv import load_dotenv
@@ -9,6 +10,14 @@ from ai_engine.indian_calendar import get_festival_context_for_prompt
 load_dotenv()
 
 logger = logging.getLogger(__name__)
+
+# Hard-cap prompts at ~6 400 tokens (25 600 chars) before sending to Groq
+def _trim_prompt(text: str, max_chars: int = 25_600) -> str:
+    if len(text) <= max_chars:
+        return text
+    keep_head = int(max_chars * 0.6)
+    keep_tail = max_chars - keep_head
+    return text[:keep_head] + "\n...[trimmed]...\n" + text[-keep_tail:]
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Time-context helpers (Zomato-style awareness)
@@ -215,12 +224,12 @@ OUTPUT FORMAT: Return ONLY valid JSON matching this exact schema:
                         },
                         {
                             "role": "user",
-                            "content": prompt,
+                            "content": _trim_prompt(prompt),
                         },
                     ],
                     model="qwen/qwen3.6-27b",
                     temperature=0.7,
-                    max_tokens=8000,
+                    max_tokens=1200,
                 )
                 content = response.choices[0].message.content.strip()
                 parsed  = self._extract_json(content)
@@ -240,9 +249,24 @@ OUTPUT FORMAT: Return ONLY valid JSON matching this exact schema:
     def _extract_json(self, text: str) -> dict:
         """Robustly extract a JSON object from model output, even if wrapped in markdown."""
         import re
-        # Remove <think> blocks
+        # Remove closed <think> blocks
         text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+        
+        # Handle unclosed <think> block (model ran out of tokens while thinking)
+        if "<think>" in text:
+            text = text[:text.index("<think>")]
+        if "</think>" in text:
+            text = text[text.rindex("</think>") + len("</think>"):]
+        
         text = text.strip()
+        
+        # Strip markdown code fences
+        text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.MULTILINE)
+        text = re.sub(r"```\s*$", "", text, flags=re.MULTILINE)
+        text = text.strip()
+        
+        if not text:
+            return {}
         
         # Robustly extract JSON object ignoring conversational preamble
         match = re.search(r'(\{.*\})', text, flags=re.DOTALL)

@@ -30,17 +30,24 @@ _MODEL = "qwen/qwen3.6-27b"
 
 
 def _strip_think(text: str) -> str:
-    """Remove <think>...</think> blocks AND anything before </think> if tag is truncated."""
-    # Full block present
+    """Aggressively remove ALL <think> content from model output.
+
+    Handles three cases:
+    1. Complete <think>...</think> block  → remove block, keep rest
+    2. Truncated block (no closing tag)   → discard everything
+    3. Orphan </think> (open tag eaten)   → keep only text after tag
+    """
+    # Case 1: complete blocks (possibly multiple)
     text = re.sub(r"<think>[\s\S]*?</think>", "", text)
-    # Truncated block — model ran out of tokens inside <think>
+
+    # Case 2 & 3: leftover open or close tags
     if "<think>" in text:
-        text = text[text.rfind("<think>"):]
-        # Remove from <think> to end (nothing useful after)
-        text = re.sub(r"<think>[\s\S]*", "", text)
-    # If </think> exists without opening tag, strip everything before it
+        # Everything from <think> onward is reasoning noise — discard
+        text = text[:text.index("<think>")]
     if "</think>" in text:
-        text = text[text.index("</think>") + len("</think>"):]
+        # Opening tag was consumed; keep only what follows the closing tag
+        text = text[text.rindex("</think>") + len("</think>"):]
+
     return text.strip()
 
 
@@ -189,7 +196,7 @@ class GroqAnswerService:
                     },
                     {"role": "user", "content": prompt},
                 ],
-                max_tokens=600,
+                max_tokens=1500,
                 temperature=0.3,
             )
 
