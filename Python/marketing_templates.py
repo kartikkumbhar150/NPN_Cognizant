@@ -462,10 +462,13 @@ def build_sms_body(
     facts = _get_product_facts(product)
     
     # Strip emojis for SMS and format as bullets (take up to 3 key facts)
-    facts_text = "\n".join(
-        f"• {re.sub(r'[^\x00-\x7F]+', '', f).strip().lstrip('- ')}" 
-        for f in facts[:3]
-    )
+    clean_facts = []
+    for f in facts[:3]:
+        # Cannot use backslash in f-string in Python 3.11
+        cleaned = re.sub(r'[^\x00-\x7F]+', '', f).strip().lstrip('- ')
+        clean_facts.append(f"• {cleaned}")
+        
+    facts_text = "\n".join(clean_facts)
 
     cta = "Apply: npnbank.in/apply"
 
