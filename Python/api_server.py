@@ -449,6 +449,7 @@ def get_dashboard_stats(current_employee=Depends(get_current_employee)):
     """
     Returns aggregate statistics for the dashboard.
     v3: includes alert_signals and cluster_distribution.
+    """
     engines = get_engines()
     customers_df = engines["customers_df"]
     total_customers = len(customers_df)
