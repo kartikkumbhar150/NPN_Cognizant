@@ -449,8 +449,8 @@ def get_dashboard_stats(current_employee=Depends(get_current_employee)):
     """
     Returns aggregate statistics for the dashboard.
     v3: includes alert_signals and cluster_distribution.
-    """
-    customers_df = load_customers()
+    engines = get_engines()
+    customers_df = engines["customers_df"]
     total_customers = len(customers_df)
 
     def income_bucket(income):
@@ -628,7 +628,8 @@ def list_customers(
     current_employee=Depends(get_current_employee),
 ):
     """List all customers with basic info. Supports search by name/ID."""
-    customers_df = load_customers()
+    engines = get_engines()
+    customers_df = engines["customers_df"]
 
     cols = ["customer_id", "first_name", "last_name", "annual_income",
             "credit_score", "age", "employment_type", "customer_segment_type",
@@ -2164,7 +2165,8 @@ SEGMENT_DEFINITIONS = [
 @app.get("/api/segments", tags=["Segments"])
 def get_segments(current_employee=Depends(get_current_employee)):
     """List segments using customer_segment_type directly from DB - no AI engine needed."""
-    customers_df = load_customers()
+    engines = get_engines()
+    customers_df = engines["customers_df"]
     total_customers = len(customers_df)
 
     # Count customers per segment directly from the stored column
