@@ -74,6 +74,13 @@ class QdrantVectorStore:
         Returns ``"created"`` or ``"exists"``.  An existing collection
         with a different vector dimension or distance metric raises
         ``CollectionConfigurationError`` WITHOUT altering the collection.
+
+        Also ensures keyword payload indexes for every allowlisted
+        filter field: Qdrant Cloud rejects payload-filter operations
+        (delete-by-source, filtered search) with HTTP 400 when no index
+        exists, while local embedded mode tolerates index-less scans —
+        creating them unconditionally keeps both modes working.  Index
+        creation is idempotent on both.
         """
         if not self.collection_exists():
             self._client.create_collection(
@@ -83,24 +90,54 @@ class QdrantVectorStore:
                     distance=self._distance,
                 ),
             )
-            return "created"
+            outcome = "created"
+        else:
+            info = self._client.get_collection(self._collection_name)
+            vectors = info.config.params.vectors
+            if not isinstance(vectors, qmodels.VectorParams):
+                raise CollectionConfigurationError(
+                    self._collection_name,
+                    expected=f"single unnamed vector (dim={self._dimension}, "
+                    f"distance={self._distance.value})",
+                    actual="named/multi vector configuration",
+                )
+            if vectors.size != self._dimension or vectors.distance != self._distance:
+                raise CollectionConfigurationError(
+                    self._collection_name,
+                    expected=f"dim={self._dimension}, distance={self._distance.value}",
+                    actual=f"dim={vectors.size}, distance={vectors.distance.value}",
+                )
+            outcome = "exists"
 
-        info = self._client.get_collection(self._collection_name)
-        vectors = info.config.params.vectors
-        if not isinstance(vectors, qmodels.VectorParams):
-            raise CollectionConfigurationError(
-                self._collection_name,
-                expected=f"single unnamed vector (dim={self._dimension}, "
-                f"distance={self._distance.value})",
-                actual="named/multi vector configuration",
-            )
-        if vectors.size != self._dimension or vectors.distance != self._distance:
-            raise CollectionConfigurationError(
-                self._collection_name,
-                expected=f"dim={self._dimension}, distance={self._distance.value}",
-                actual=f"dim={vectors.size}, distance={vectors.distance.value}",
-            )
-        return "exists"
+        self._ensure_filter_indexes()
+        return outcome
+
+    def _ensure_filter_indexes(self) -> None:
+        """Create keyword payload indexes for the allowlisted filter fields.
+
+        The local-mode SDK emits a harmless ``UserWarning`` ("no effect
+        in the local Qdrant") which is suppressed here: the indexes exist
+        for managed-cloud compatibility, and local mode simply ignores
+        them.
+        """
+        import warnings
+
+        for field in sorted(SEARCH_FILTER_FIELDS):
+            try:
+                with warnings.catch_warnings():
+                    warnings.filterwarnings(
+                        "ignore", message=".*[Pp]ayload indexes have no effect.*"
+                    )
+                    self._client.create_payload_index(
+                        collection_name=self._collection_name,
+                        field_name=field,
+                        field_schema=qmodels.PayloadSchemaType.KEYWORD,
+                    )
+            except Exception as exc:
+                raise VectorStoreError(
+                    f"payload index creation failed for {field!r}: "
+                    f"{type(exc).__name__}"
+                ) from exc
 
     # ── Point operations ────────────────────────────────────────────────────
 
