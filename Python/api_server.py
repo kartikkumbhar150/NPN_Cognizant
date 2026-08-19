@@ -21,6 +21,12 @@ from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 import math
+import logging
+import pandas as pd
+
+# ── Logger Setup ──
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # ── Path setup so ai_engine modules resolve ──────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
