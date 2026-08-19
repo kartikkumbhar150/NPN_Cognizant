@@ -4,6 +4,7 @@ import logging
 from datetime import datetime
 from groq import Groq
 from dotenv import load_dotenv
+from ai_engine.indian_calendar import get_festival_context_for_prompt
 
 load_dotenv()
 
@@ -141,7 +142,36 @@ class GenAIService:
                 "1 short punchy sentence (with a time-aware hook), 1 CTA. Max 2 sentences total."
             )
 
-        prompt = f"""You are a world-class banking marketing copywriter who writes like Zomato \u2014 witty, warm, hyper-personalised.
+        # Festival context injection
+        festival_context = ""
+        try:
+            festival_context = get_festival_context_for_prompt()
+        except Exception:
+            pass
+
+        # Travel-specific features for frequent flyers
+        travel_features_block = ""
+        if features and hasattr(features, "travel_profile"):
+            tp = features.travel_profile
+            if tp.get("is_frequent_flyer"):
+                travel_features_block = f"""
+
+CUSTOMER TRAVEL PROFILE (use these specifics in the message!):
+- Travel frequency: {tp.get('travel_frequency', 'frequent')}
+- Flight spend (90 days): ₹{tp.get('flight_spend_90d', 0):,.0f}
+- Hotel spend (90 days): ₹{tp.get('hotel_spend_90d', 0):,.0f}
+- International transactions: {tp.get('international_txn_count', 0)}
+- Avg trip value: ₹{tp.get('avg_trip_value', 0):,.0f}
+
+CARD FEATURES TO HIGHLIGHT (weave these naturally into the message):
+- Unlimited complimentary airport lounge access (250+ lounges pan-India)
+- Earn 5x miles on every ₹100 spent on flights & hotels
+- 10% instant discount on IndiGo & Air India via this card
+- Zero forex markup on international transactions
+- Complimentary travel insurance up to ₹50 lakh
+"""
+
+        prompt = f"""You are a world-class banking marketing copywriter who writes like Zomato — witty, warm, hyper-personalised.
 Write a {channel} message for the customer below.
 
 CUSTOMER NAME: {first_name}
@@ -153,17 +183,19 @@ CUSTOMER PORTFOLIO:
 TIME & CONTEXT (use this to make the message feel timely and alive):
 {time_summary}
 Greeting to use: "{greeting}"
-
+{festival_context}
+{travel_features_block}
 WHY WE ARE RECOMMENDING THIS (use these exact reasons, do not invent new ones):
 {chr(10).join(['- ' + r for r in reasons])}
 
 STRICT INSTRUCTIONS:
-1. Open with the time-aware greeting above \u2014 make it feel like a push notification that arrived at exactly the right moment.
-2. Reference the customer\u2019s actual portfolio (cards, loans, investments) to make the message feel genuinely personal.
+1. Open with the time-aware greeting above — make it feel like a push notification that arrived at exactly the right moment.
+2. Reference the customer's actual portfolio (cards, loans, investments) to make the message feel genuinely personal.
 3. Do NOT invent product features, interest rates, or eligibility claims.
-4. Tone: witty, warm, conversational \u2014 like a smart friend at a bank (Zomato-style).
+4. Tone: witty, warm, conversational — like a smart friend at a bank (Zomato-style).
 5. Max words: {max_words}
 6. Format: {format_instructions}
+7. IMPORTANT: Be SHORT and PUNCHY. Every word must earn its place. Cut anything generic.
 
 OUTPUT FORMAT: Return ONLY valid JSON matching this exact schema:
 {{

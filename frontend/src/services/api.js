@@ -198,6 +198,12 @@ export const getCampaignAnalytics = (campaignId) =>
  */
 export const getCampaignInsights = () => apiFetch('/api/campaigns/insights');
 
+/**
+ * GET /api/campaigns/suggestions
+ * AI-generated campaign suggestions based on upcoming Indian festivals and events
+ */
+export const getCampaignSuggestions = () => apiFetch('/api/campaigns/suggestions');
+
 // ── Health ────────────────────────────────────────────────────────────────────
 
 export const healthCheck = () => apiFetch('/health');

@@ -32,8 +32,10 @@ export default function Dashboard({ onNavigate, onSelectCustomer, onStartCampaig
   const [stats, setStats]           = useState(null);
   const [customers, setCustomers]   = useState([]);
   const [segments, setSegments]     = useState([]);
+  const [alerts, setAlerts]         = useState([]);
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState('');
+  const [dismissedAlerts, setDismissedAlerts] = useState(new Set());
 
   const loadData = async () => {
     setLoading(true);
@@ -47,6 +49,7 @@ export default function Dashboard({ onNavigate, onSelectCustomer, onStartCampaig
       setStats(statsData);
       setCustomers(custData.customers || []);
       setSegments(segData.segments || []);
+      setAlerts(statsData.alert_signals || []);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -138,11 +141,59 @@ export default function Dashboard({ onNavigate, onSelectCustomer, onStartCampaig
   const activeCampaigns = stats?.active_campaigns || 0;
   const avgCreditScore  = stats?.avg_credit_score || 0;
 
+  const visibleAlerts = alerts.filter((_, i) => !dismissedAlerts.has(i));
+
   return (
-    <div className="space-y-6 pb-8">
+    <div className="space-y-5 pb-8">
 
+      {/* ── AI Alert Rail ─────────────────────────────────────────────────── */}
+      {visibleAlerts.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wide flex items-center gap-1.5">
+              <Zap className="w-3.5 h-3.5 text-amber-500" />
+              Live Intelligence Alerts
+            </p>
+            <button onClick={() => setDismissedAlerts(new Set(alerts.map((_, i) => i)))}
+              className="text-[10px] text-slate-400 hover:text-slate-600 cursor-pointer transition-colors">
+              Dismiss all
+            </button>
+          </div>
+          {visibleAlerts.map((alert, idx) => {
+            const colorMap = {
+              green: { bar: 'bg-emerald-500', bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-800', badge: 'bg-emerald-100 text-emerald-700', btnBg: 'bg-emerald-600 hover:bg-emerald-700' },
+              red:   { bar: 'bg-red-500',     bg: 'bg-red-50',     border: 'border-red-200',     text: 'text-red-800',     badge: 'bg-red-100 text-red-700',     btnBg: 'bg-red-600 hover:bg-red-700' },
+              amber: { bar: 'bg-amber-400',   bg: 'bg-amber-50',   border: 'border-amber-200',   text: 'text-amber-800',   badge: 'bg-amber-100 text-amber-700', btnBg: 'bg-amber-500 hover:bg-amber-600' },
+            };
+            const c = colorMap[alert.severity] || colorMap.amber;
+            return (
+              <div key={idx} className={`flex items-center gap-3 px-4 py-3 rounded-xl border ${c.bg} ${c.border} group`}>
+                <div className={`w-1 h-8 rounded-full ${c.bar} shrink-0`} />
+                <span className="text-base">{alert.emoji}</span>
+                <div className="flex-1 min-w-0">
+                  <p className={`text-xs font-bold ${c.text} truncate`}>{alert.title}</p>
+                  <p className="text-[10px] text-slate-500 mt-0.5">{alert.action}</p>
+                </div>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${c.badge} shrink-0`}>
+                  {alert.count?.toLocaleString()} customers
+                </span>
+                {alert.product && (
+                  <button
+                    onClick={() => onStartCampaign(alert.product, 'AI Alert')}
+                    className={`shrink-0 text-[10px] font-bold text-white px-3 py-1.5 rounded-lg cursor-pointer transition-colors ${c.btnBg}`}>
+                    Campaign →
+                  </button>
+                )}
+                <button onClick={() => setDismissedAlerts(prev => new Set([...prev, idx]))}
+                  className="text-slate-300 hover:text-slate-500 text-xs cursor-pointer shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                  ✕
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
-      {/* 4 KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <KpiCard
           title="Total Customers"

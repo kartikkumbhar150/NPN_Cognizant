@@ -10,7 +10,8 @@ import CampaignSuccessModal from '../components/CampaignSuccessModal';
 import {
   getCampaigns, createCampaign, getSegments,
   generateCampaignContent, getCampaignCustomers,
-  generatePersonalisedMessage, getCampaignAnalytics, getCampaignInsights
+  generatePersonalisedMessage, getCampaignAnalytics, getCampaignInsights,
+  getCampaignSuggestions,
 } from '../services/api';
 
 // Age group config for UI
@@ -22,22 +23,49 @@ const AGE_GROUP_CONFIG = {
   boomer: { label: 'Boomer (55+)', color: 'bg-emerald-50 text-emerald-700 border-emerald-200', icon: Star, desc: 'Formal • Relationship-based • Branch CTA' },
 };
 
-const PRODUCTS = [
-  { value: 'Travel Credit Card', label: 'Travel Credit Card (Zero Forex)', segment: 'Frequent Travellers', icon: '✈️' },
-  { value: 'Premium Account', label: 'Premium Current Account', segment: 'High Value', icon: '💎' },
-  { value: 'SIP / Mutual Fund', label: 'SIP / Mutual Fund', segment: 'Investment Oriented', icon: '📈' },
-  { value: 'Personal Loan', label: 'Instant Personal Loan', segment: 'Loan Ready', icon: '💰' },
-  { value: 'Credit Card', label: 'Standard Rewards Credit Card', segment: 'Churn Risk', icon: '💳' },
-  { value: 'Home Loan', label: 'Home Loan (Low Interest)', segment: 'Home Buyers', icon: '🏠' },
-  { value: 'Auto Loan', label: 'Auto Loan (Quick Disbursal)', segment: 'Car Buyers', icon: '🚗' },
-  { value: 'Education Loan', label: 'Education Loan', segment: 'Students/Parents', icon: '🎓' },
-  { value: 'Life Insurance', label: 'Term Life Insurance', segment: 'Family Planners', icon: '🛡️' },
-  { value: 'Health Insurance', label: 'Comprehensive Health Cover', segment: 'Health Conscious', icon: '⚕️' },
-  { value: 'Fixed Deposit', label: 'High-Yield Fixed Deposit', segment: 'Conservative Savers', icon: '🏦' },
-  { value: 'NPS', label: 'National Pension System', segment: 'Retirement Planners', icon: '👴' },
-  { value: 'Salary Account', label: 'Corporate Salary Account', segment: 'Professionals', icon: '💼' },
-  { value: 'Gold Loan', label: 'Instant Gold Loan', segment: 'Emergency Credit', icon: '🪙' },
+// Grouped product taxonomy (2-level)
+const PRODUCT_GROUPS = [
+  {
+    group: '💳 Credit Cards', items: [
+      { value: 'Travel Credit Card', label: 'Travel CC (Zero Forex & Lounge)', icon: '✈️' },
+      { value: 'Rewards Credit Card', label: 'Rewards Credit Card', icon: '🎁' },
+      { value: 'Cashback Credit Card', label: 'Cashback Credit Card', icon: '💰' },
+      { value: 'Premium Credit Card', label: 'Premium / Lifestyle Card', icon: '💎' },
+    ],
+  },
+  {
+    group: '🏦 Loans', items: [
+      { value: 'Personal Loan', label: 'Instant Personal Loan', icon: '💸' },
+      { value: 'Home Loan', label: 'Home Loan (Low Interest)', icon: '🏠' },
+      { value: 'Auto Loan', label: 'Auto Loan (Quick Disbursal)', icon: '🚗' },
+      { value: 'Education Loan', label: 'Education Loan', icon: '🎓' },
+      { value: 'Gold Loan', label: 'Instant Gold Loan', icon: '🪙' },
+    ],
+  },
+  {
+    group: '🛡️ Insurance', items: [
+      { value: 'Life Insurance', label: 'Term Life Insurance', icon: '💚' },
+      { value: 'Health Insurance', label: 'Health Insurance', icon: '⚕️' },
+      { value: 'Motor Insurance', label: 'Motor / Car Insurance', icon: '🚘' },
+      { value: 'Travel Insurance', label: 'Travel Insurance', icon: '🌍' },
+    ],
+  },
+  {
+    group: '📈 Investments', items: [
+      { value: 'SIP / Mutual Fund', label: 'SIP / Mutual Fund', icon: '📈' },
+      { value: 'Fixed Deposit', label: 'High-Yield Fixed Deposit', icon: '🏦' },
+      { value: 'NPS', label: 'National Pension System', icon: '👴' },
+    ],
+  },
+  {
+    group: '💼 Accounts', items: [
+      { value: 'Premium Account', label: 'Premium Current Account', icon: '💼' },
+      { value: 'Salary Account', label: 'Corporate Salary Account', icon: '📋' },
+    ],
+  },
 ];
+
+const ALL_PRODUCTS = PRODUCT_GROUPS.flatMap(g => g.items);
 
 const CHANNELS = [
   { id: 'Email', icon: Mail, title: 'Email', desc: 'Rich HTML, personalised subject lines' },
@@ -84,6 +112,16 @@ export default function Campaigns({ initialProduct, initialSegment, onNavigateAn
   // Insights
   const [insights, setInsights] = useState(null);
   const [loadingInsights, setLoadingInsights] = useState(false);
+
+  // AI Campaign Suggestions
+  const [suggestions, setSuggestions] = useState([]);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  // Schedule config (Step 4)
+  const [durationMonths, setDurationMonths] = useState(1);
+  const [messagesPerDay, setMessagesPerDay] = useState(1);
+  const [timeSlots, setTimeSlots] = useState(['morning']);
 
   // Load campaigns list on mount
   useEffect(() => {
@@ -189,7 +227,6 @@ export default function Campaigns({ initialProduct, initialSegment, onNavigateAn
     }
   };
 
-  // Step 6: Launch campaign
   const handleLaunchCampaign = async () => {
     setIsLaunching(true);
     try {
@@ -205,6 +242,9 @@ export default function Campaigns({ initialProduct, initialSegment, onNavigateAn
         message_sms: selectedChannel === 'SMS' ? generatedBody : '',
         age_group_strategy: ageStrategy,
         customer_ids: selectedCustomerIds,
+        duration_months: durationMonths,
+        messages_per_day: messagesPerDay,
+        preferred_time_slots: timeSlots,
       });
       setLaunchedCampaign(campaign);
       setIsSuccessModalOpen(true);
@@ -237,9 +277,21 @@ export default function Campaigns({ initialProduct, initialSegment, onNavigateAn
     } catch (_) { }
   };
 
-  const productInfo = PRODUCTS.find((p) => p.value === selectedProduct) || PRODUCTS[0];
+  const productInfo = ALL_PRODUCTS.find((p) => p.value === selectedProduct) || ALL_PRODUCTS[0];
 
-  const stepLabel = (s) => ['', 'Product', 'Audience', 'Channel', 'Preview', 'Launch'][s];
+  const loadSuggestions = async () => {
+    setLoadingSuggestions(true);
+    try {
+      const data = await getCampaignSuggestions();
+      setSuggestions(data.suggestions || []);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingSuggestions(false);
+    }
+  };
+
+  const stepLabel = (s) => ['', 'Product', 'Audience', 'Channel', 'Schedule', 'Preview', 'Launch'][s];
   const stepClass = (s) => {
     if (s < step) return 'bg-emerald-500 border-emerald-500 text-white';
     if (s === step) return 'bg-blue-600 border-blue-600 text-white ring-4 ring-blue-100';
@@ -257,9 +309,9 @@ export default function Campaigns({ initialProduct, initialSegment, onNavigateAn
             <div className="absolute left-0 top-1/2 -translate-y-1/2 w-full h-0.5 bg-slate-200 -z-0" />
             <div
               className="absolute left-0 top-1/2 -translate-y-1/2 h-0.5 bg-emerald-500 -z-0 transition-all duration-500"
-              style={{ width: `${((step - 1) / 4) * 100}%` }}
+              style={{ width: `${((step - 1) / 5) * 100}%` }}
             />
-            {[1, 2, 3, 4, 5].map((s) => (
+            {[1, 2, 3, 4, 5, 6].map((s) => (
               <div key={s} className="relative z-10 flex flex-col items-center">
                 <div className={`w-8 h-8 rounded-full border-2 flex items-center justify-center text-xs font-bold transition-colors ${stepClass(s)}`}>
                   {s < step ? <CheckCircle2 className="w-4 h-4" /> : s}
@@ -280,7 +332,7 @@ export default function Campaigns({ initialProduct, initialSegment, onNavigateAn
               {/* Header + Name row */}
               <div className="flex items-end gap-4 pb-4 pt-2 border-b border-slate-100">
                 <div className="flex-1 min-w-0">
-                  <h3 className="text-sm font-bold text-slate-900">Step 1: Select Product & Name Campaign</h3>
+                  <h3 className="text-sm font-bold text-slate-900">Step 1: Select Product &amp; Name Campaign</h3>
                   <p className="text-xs text-slate-500 mt-0.5">Choose a product — NBO customers auto-populate in the next step.</p>
                 </div>
                 <div className="shrink-0 w-72">
@@ -295,27 +347,73 @@ export default function Campaigns({ initialProduct, initialSegment, onNavigateAn
                 </div>
               </div>
 
-              {/* Product grid — 5 per row, 3 rows for 14 items, no scroll */}
-              <div>
-                <label className="block text-[10px] font-bold text-slate-600 mb-2 uppercase tracking-wider">Product to Market</label>
-                <div className="grid grid-cols-5 gap-2">
-                  {PRODUCTS.map((p) => (
-                    <div
-                      key={p.value}
-                      onClick={() => setSelectedProduct(p.value)}
-                      className={`relative flex items-center gap-2.5 px-3 py-2.5 rounded-xl border-2 cursor-pointer transition-all group ${selectedProduct === p.value
-                          ? 'border-blue-600 bg-blue-50 shadow-sm'
-                          : 'border-slate-200 bg-white hover:border-blue-300 hover:bg-slate-50'
-                        }`}
-                    >
-                      <span className="text-lg shrink-0">{p.icon}</span>
-                      <div className="min-w-0 flex-1">
-                        <p className={`text-[11px] font-bold leading-tight truncate ${selectedProduct === p.value ? 'text-blue-800' : 'text-slate-800'}`}>{p.label}</p>
-                        <p className="text-[9px] text-slate-400 truncate">{p.segment}</p>
+              {/* 🤖 AI Suggests Panel */}
+              <div className="border border-purple-200 bg-purple-50 rounded-xl overflow-hidden">
+                <button
+                  onClick={() => { setShowSuggestions(v => !v); if (!suggestions.length && !loadingSuggestions) loadSuggestions(); }}
+                  className="w-full flex items-center gap-2 px-4 py-3 text-left cursor-pointer hover:bg-purple-100 transition-colors"
+                >
+                  <Brain className="w-4 h-4 text-purple-600" />
+                  <span className="text-sm font-bold text-purple-800">🤖 AI Campaign Suggester</span>
+                  <span className="text-xs text-purple-500 ml-1">— Based on upcoming Indian festivals & events</span>
+                  <span className="ml-auto text-xs text-purple-500">{showSuggestions ? '▲' : '▼'}</span>
+                </button>
+                {showSuggestions && (
+                  <div className="border-t border-purple-200 p-4">
+                    {loadingSuggestions ? (
+                      <div className="flex items-center gap-2 text-purple-600 py-2">
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span className="text-xs">Analysing upcoming events…</span>
                       </div>
-                      {selectedProduct === p.value && (
-                        <CheckCircle2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                      )}
+                    ) : suggestions.length > 0 ? (
+                      <div className="grid grid-cols-2 gap-2">
+                        {suggestions.map((s, i) => (
+                          <button
+                            key={i}
+                            onClick={() => { setSelectedProduct(s.product); setCampaignName(s.campaign_name || `${s.festival_hook} ${s.product} Campaign`); }}
+                            className="text-left p-3 bg-white border border-purple-200 rounded-lg hover:border-purple-400 hover:shadow-sm transition-all cursor-pointer group"
+                          >
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="text-base">{s.emoji || '🎉'}</span>
+                              <span className="text-xs font-bold text-slate-900 truncate">{s.product}</span>
+                              <span className={`ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full ${ s.urgency === 'high' ? 'bg-red-100 text-red-700' : s.urgency === 'medium' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600' }`}>{s.urgency?.toUpperCase()}</span>
+                            </div>
+                            <p className="text-[10px] text-slate-500 leading-relaxed line-clamp-2">{s.reason}</p>
+                            {s.festival_hook && <p className="text-[10px] text-purple-600 font-semibold mt-1">📅 {s.festival_hook}</p>}
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-purple-400 text-center py-2">No suggestions available. Click the panel to load.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Grouped product selector */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 mb-3 uppercase tracking-wider">Product to Market</label>
+                <div className="space-y-4">
+                  {PRODUCT_GROUPS.map((group) => (
+                    <div key={group.group}>
+                      <p className="text-xs font-bold text-slate-500 mb-2">{group.group}</p>
+                      <div className="grid grid-cols-4 gap-2">
+                        {group.items.map((p) => (
+                          <div
+                            key={p.value}
+                            onClick={() => setSelectedProduct(p.value)}
+                            className={`relative flex items-center gap-2 px-3 py-2.5 rounded-xl border-2 cursor-pointer transition-all ${
+                              selectedProduct === p.value
+                                ? 'border-blue-600 bg-blue-50 shadow-sm'
+                                : 'border-slate-200 bg-white hover:border-blue-300 hover:bg-slate-50'
+                            }`}
+                          >
+                            <span className="text-base shrink-0">{p.icon}</span>
+                            <p className={`text-[11px] font-bold leading-tight truncate flex-1 ${ selectedProduct === p.value ? 'text-blue-800' : 'text-slate-800' }`}>{p.label}</p>
+                            {selectedProduct === p.value && <CheckCircle2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -529,7 +627,86 @@ export default function Campaigns({ initialProduct, initialSegment, onNavigateAn
                   <ArrowLeft className="w-4 h-4" /><span>Back</span>
                 </button>
                 <button
-                  onClick={() => { setStep(4); handleGeneratePreview(); }}
+                  onClick={() => setStep(4)}
+                  className="inline-flex items-center space-x-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+                >
+                  <Clock className="w-4 h-4" /><span>Set Schedule →</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ── STEP 4: SCHEDULE ──────────────────────────────────────────── */}
+          {step === 4 && (
+            <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+              <div className="pb-4 border-b border-slate-100">
+                <h3 className="text-base font-bold text-slate-900">Step 4: Campaign Schedule</h3>
+                <p className="text-xs text-slate-500 mt-1">Set how long and how often personalised messages will be sent.</p>
+              </div>
+
+              {/* Duration */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-3 uppercase tracking-wide">Campaign Duration</label>
+                <div className="flex gap-2">
+                  {[1, 2, 3, 6, 12].map((m) => (
+                    <button key={m} onClick={() => setDurationMonths(m)}
+                      className={`px-4 py-2 rounded-lg border-2 text-sm font-bold cursor-pointer transition-all ${durationMonths === m ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-200 text-slate-600 hover:border-blue-300'}`}>
+                      {m === 12 ? '1 Year' : `${m} Month${m > 1 ? 's' : ''}`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Frequency */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-3 uppercase tracking-wide">Messages Per Day</label>
+                <div className="flex gap-2">
+                  {[1, 2].map((n) => (
+                    <button key={n} onClick={() => setMessagesPerDay(n)}
+                      className={`px-5 py-2 rounded-lg border-2 text-sm font-bold cursor-pointer transition-all ${messagesPerDay === n ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-200 text-slate-600 hover:border-blue-300'}`}>
+                      {n} per day
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Time slots */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-3 uppercase tracking-wide">Preferred Send Time</label>
+                <div className="flex gap-2">
+                  {[
+                    { id: 'morning', label: '🌅 Morning', sub: '8–10 AM' },
+                    { id: 'afternoon', label: '☀️ Afternoon', sub: '12–2 PM' },
+                    { id: 'evening', label: '🌆 Evening', sub: '6–8 PM' },
+                  ].map((slot) => (
+                    <button key={slot.id}
+                      onClick={() => setTimeSlots((prev) => prev.includes(slot.id) ? prev.filter(x => x !== slot.id) : [...prev, slot.id])}
+                      className={`px-4 py-2.5 rounded-lg border-2 text-xs font-bold cursor-pointer transition-all flex flex-col items-start ${timeSlots.includes(slot.id) ? 'border-blue-600 bg-blue-50 text-blue-800' : 'border-slate-200 text-slate-600 hover:border-blue-300'}`}>
+                      <span>{slot.label}</span>
+                      <span className="text-[10px] text-slate-400 font-normal">{slot.sub}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Summary card */}
+              <div className="bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200 rounded-xl p-4">
+                <p className="text-xs font-bold text-slate-600 uppercase tracking-wide mb-2">📊 Campaign Summary</p>
+                <p className="text-lg font-extrabold text-slate-900">
+                  <span className="text-blue-600">{(durationMonths * 30 * messagesPerDay * selectedCustomerIds.length).toLocaleString()}</span> total messages
+                </p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {selectedCustomerIds.length} customers × {messagesPerDay}/day × {durationMonths * 30} days
+                  {timeSlots.length > 0 && ` · Sent at ${timeSlots.join(', ')}`}
+                </p>
+              </div>
+
+              <div className="pt-2 flex justify-between">
+                <button onClick={() => setStep(3)} className="inline-flex items-center space-x-2 px-4 py-2 text-slate-600 hover:text-slate-900 text-xs font-semibold rounded-lg hover:bg-slate-100 transition-colors cursor-pointer">
+                  <ArrowLeft className="w-4 h-4" /><span>Back</span>
+                </button>
+                <button
+                  onClick={() => { setStep(5); handleGeneratePreview(); }}
                   className="inline-flex items-center space-x-2 px-6 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
                 >
                   <Sparkles className="w-4 h-4" /><span>Generate AI Preview →</span>
@@ -538,12 +715,11 @@ export default function Campaigns({ initialProduct, initialSegment, onNavigateAn
             </div>
           )}
 
-
-          {/* ── STEP 4: PREVIEW & SUMMARY ────────────────────────────────────── */}
-          {step === 4 && (
+          {/* ── STEP 5: PREVIEW & SUMMARY ──────────────────────────────────── */}
+          {step === 5 && (
             <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
               <div className="pb-4 border-b border-slate-100">
-                <h3 className="text-base font-bold text-slate-900">Step 4: Campaign Summary</h3>
+                <h3 className="text-base font-bold text-slate-900">Step 5: Campaign Summary &amp; Preview</h3>
                 <p className="text-xs text-slate-500 mt-1">Review all details before launch.</p>
               </div>
 
@@ -600,8 +776,8 @@ export default function Campaigns({ initialProduct, initialSegment, onNavigateAn
               </div>
 
               <div className="flex justify-start">
-                <button onClick={() => setStep(3)} className="inline-flex items-center space-x-2 px-4 py-2 text-slate-600 hover:text-slate-900 text-xs font-semibold rounded-lg hover:bg-slate-100 transition-colors cursor-pointer">
-                  <ArrowLeft className="w-4 h-4" /><span>Back to Channel</span>
+                <button onClick={() => setStep(4)} className="inline-flex items-center space-x-2 px-4 py-2 text-slate-600 hover:text-slate-900 text-xs font-semibold rounded-lg hover:bg-slate-100 transition-colors cursor-pointer">
+                  <ArrowLeft className="w-4 h-4" /><span>Back to Schedule</span>
                 </button>
               </div>
             </div>

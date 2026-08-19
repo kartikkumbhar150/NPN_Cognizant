@@ -68,6 +68,8 @@ from ai_engine.genai_service import GenAIService
 from ai_engine.financial_analyst import FinancialAnalyst
 from ai_engine.explainability_engine import ExplainabilityEngine
 from ai_engine.marketing_guard import MarketingGuard
+from ai_engine.clustering_engine import ClusteringEngine
+from ai_engine.indian_calendar import get_festival_context_for_prompt, get_campaign_suggestions_by_events
 
 # ── App setup ─────────────────────────────────────────────────────────────────
 app = FastAPI(
@@ -96,6 +98,24 @@ app.add_middleware(
 SECRET_KEY = os.getenv("SECRET_KEY", "npnbank-super-secret-key-2024")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 480  # 8 hours
+
+
+# ── Groq response cleaner (strips <think> blocks from qwen/reasoning models) ──
+import re as _re_global
+
+def _clean_groq_json(raw: str) -> str:
+    """
+    Strip <think>...</think> reasoning blocks, markdown code fences,
+    and any leading/trailing whitespace — leaving pure JSON ready to parse.
+    Works for qwen3.x, deepseek-r1, and any other chain-of-thought models.
+    """
+    # 1. Remove <think>...</think> blocks (may be multi-line)
+    raw = _re_global.sub(r"<think>.*?</think>", "", raw, flags=_re_global.DOTALL)
+    # 2. Remove markdown code fences  ```json ... ```
+    raw = _re_global.sub(r"^```(?:json)?\s*", "", raw, flags=_re_global.MULTILINE)
+    raw = _re_global.sub(r"```\s*$", "", raw, flags=_re_global.MULTILINE)
+    return raw.strip()
+
 
 pwd_context = CryptContext(schemes=["sha256_crypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
@@ -210,6 +230,10 @@ class CampaignCreate(BaseModel):
     age_group_strategy: Optional[str] = "auto"  # auto|genz|millennial|genx|boomer
     message_email: Optional[str] = ""
     message_sms: Optional[str] = ""
+    # ── v3.0: Schedule config ────────────────────────────────────────────────
+    duration_months: Optional[int] = 1       # 1, 2, 3, 6, 12
+    messages_per_day: Optional[int] = 1      # 1 or 2
+    preferred_time_slots: Optional[List[str]] = ["morning"]  # morning|afternoon|evening
 
 
 class Campaign(BaseModel):
@@ -308,10 +332,9 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
 def get_dashboard_stats(current_employee=Depends(get_current_employee)):
     """
     Returns aggregate statistics for the dashboard.
-    Fetches directly from the database - no AI engine required.
+    v3: includes alert_signals and cluster_distribution.
     """
     customers_df = load_customers()
-
     total_customers = len(customers_df)
 
     def income_bucket(income):
@@ -325,7 +348,6 @@ def get_dashboard_stats(current_employee=Depends(get_current_employee)):
         bucket = income_bucket(row.get("annual_income", 0))
         income_dist[bucket] = income_dist.get(bucket, 0) + 1
 
-    # Use customer_segment_type column directly - no AI engine needed
     segment_dist = {}
     if "customer_segment_type" in customers_df.columns:
         for val in customers_df["customer_segment_type"].dropna():
@@ -337,6 +359,134 @@ def get_dashboard_stats(current_employee=Depends(get_current_employee)):
         total_campaigns = conn.execute(text("SELECT COUNT(*) FROM campaigns")).scalar()
         active_campaigns = conn.execute(text("SELECT COUNT(*) FROM campaigns WHERE status = 'Active'")).scalar()
 
+    # ── Alert Signals (computed from customer data) ───────────────────────────
+    alert_signals = []
+    try:
+        # 1. Customers with high credit score + no credit card (acquisition opportunity)
+        if "credit_score" in customers_df.columns:
+            high_credit = customers_df[
+                (customers_df["credit_score"] >= 750)
+            ]
+            if len(high_credit) > 0:
+                alert_signals.append({
+                    "type": "opportunity",
+                    "severity": "green",
+                    "emoji": "🟢",
+                    "title": f"{len(high_credit)} customers with Excellent Credit Score (750+)",
+                    "action": "Travel Credit Card Campaign",
+                    "product": "Travel Credit Card",
+                    "count": int(len(high_credit)),
+                })
+
+        # 2. Over-leveraged customers (high EMI/income ratio proxy)
+        if "annual_income" in customers_df.columns and "credit_score" in customers_df.columns:
+            over_lev = customers_df[
+                (customers_df["credit_score"] < 650) &
+                (customers_df["annual_income"] > 400000)
+            ]
+            if len(over_lev) > 0:
+                alert_signals.append({
+                    "type": "risk",
+                    "severity": "red",
+                    "emoji": "🔴",
+                    "title": f"{len(over_lev)} customers show credit stress signals",
+                    "action": "Review & Suppress Loan Offers",
+                    "product": None,
+                    "count": int(len(over_lev)),
+                })
+
+        # 3. High income, no investment (insurance/SIP gap)
+        if "annual_income" in customers_df.columns:
+            high_income = customers_df[
+                customers_df["annual_income"] >= 1200000
+            ]
+            if len(high_income) > 0:
+                alert_signals.append({
+                    "type": "opportunity",
+                    "severity": "amber",
+                    "emoji": "🟡",
+                    "title": f"{len(high_income)} high-income customers (₹12L+) need investment review",
+                    "action": "SIP / Mutual Fund Campaign",
+                    "product": "SIP / Mutual Fund",
+                    "count": int(len(high_income)),
+                })
+
+        # 4. Young customers (<30) — digital-first segment for credit card
+        if "age" in customers_df.columns:
+            young = customers_df[customers_df["age"] < 30]
+            if len(young) > 0:
+                alert_signals.append({
+                    "type": "opportunity",
+                    "severity": "green",
+                    "emoji": "🟢",
+                    "title": f"{len(young)} Gen Z / Millennial customers — prime for first credit card",
+                    "action": "Rewards Credit Card Campaign",
+                    "product": "Rewards Credit Card",
+                    "count": int(len(young)),
+                })
+
+        # 5. Senior customers (60+) — health insurance focus
+        if "age" in customers_df.columns:
+            senior = customers_df[customers_df["age"] >= 58]
+            if len(senior) > 0:
+                alert_signals.append({
+                    "type": "risk",
+                    "severity": "amber",
+                    "emoji": "🟡",
+                    "title": f"{len(senior)} customers nearing retirement age (58+) — pension gap risk",
+                    "action": "NPS / Health Insurance Campaign",
+                    "product": "NPS",
+                    "count": int(len(senior)),
+                })
+
+    except Exception as exc:
+        logger.warning("Alert signal computation error: %s", exc)
+
+    # ── Cluster distribution (rule-based proxy since AI clustering is per-customer) ──
+    cluster_distribution = []
+    try:
+        from ai_engine.clustering_engine import CLUSTER_PERSONAS
+        # Distribute customers into clusters by employment type + age as a fast proxy
+        if "employment_type" in customers_df.columns and "age" in customers_df.columns:
+            persona_counts = {k: 0 for k in CLUSTER_PERSONAS}
+            for _, row in customers_df.iterrows():
+                emp = str(row.get("employment_type", "")).lower()
+                age = int(row.get("age", 35))
+                income = float(row.get("annual_income", 0))
+                if age < 25:
+                    persona_counts[6] = persona_counts.get(6, 0) + 1
+                elif "student" in emp:
+                    persona_counts[6] = persona_counts.get(6, 0) + 1
+                elif age >= 58 or "retir" in emp:
+                    persona_counts[5] = persona_counts.get(5, 0) + 1
+                elif "business" in emp or "self" in emp:
+                    persona_counts[3] = persona_counts.get(3, 0) + 1
+                elif income >= 2500000:
+                    persona_counts[7] = persona_counts.get(7, 0) + 1
+                elif age < 30:
+                    persona_counts[0] = persona_counts.get(0, 0) + 1
+                elif 30 <= age <= 45 and income >= 1000000:
+                    persona_counts[1] = persona_counts.get(1, 0) + 1
+                elif 35 <= age <= 55:
+                    persona_counts[2] = persona_counts.get(2, 0) + 1
+                else:
+                    persona_counts[4] = persona_counts.get(4, 0) + 1
+
+            for cid, persona in CLUSTER_PERSONAS.items():
+                cnt = persona_counts.get(cid, 0)
+                cluster_distribution.append({
+                    "id": cid,
+                    "label": persona["label"],
+                    "description": persona["description"],
+                    "color": persona["color"],
+                    "count": cnt,
+                    "percentage": round(cnt / max(total_customers, 1) * 100, 1),
+                    "top_products": list(persona["nbo_boost"].keys())[:3],
+                    "message_tone": persona["message_tone"],
+                })
+    except Exception as exc:
+        logger.warning("Cluster distribution error: %s", exc)
+
     return {
         "total_customers": total_customers,
         "total_campaigns": total_campaigns,
@@ -344,6 +494,8 @@ def get_dashboard_stats(current_employee=Depends(get_current_employee)):
         "avg_credit_score": credit_avg,
         "income_distribution": income_dist,
         "segment_distribution": segment_dist,
+        "alert_signals": alert_signals,
+        "cluster_distribution": cluster_distribution,
     }
 
 
@@ -415,6 +567,16 @@ def analyze_customer(
 
     # 1. Features
     features = feature_engine.compute(customer_id, customer_data)
+
+    # 1.5 Cluster assignment
+    try:
+        clustering_engine = ClusteringEngine()
+        cluster_info = clustering_engine.assign(customer_data, features)
+        features.cluster_label = cluster_info.get("cluster_label", "Standard")
+        features.cluster_id    = cluster_info.get("cluster_id", -1)
+        features.cluster_color = cluster_info.get("cluster_color", "#64748b")
+    except Exception as _ce:
+        cluster_info = {"cluster_label": "Standard", "cluster_id": -1, "cluster_color": "#64748b", "message_tone": "professional"}
 
     # 2. Behavior & Events
     behavior = behavior_engine.analyze_behavior_v2(customer_id, features)
@@ -494,8 +656,12 @@ def analyze_customer(
         "marketing_check": marketing_check,
         "genai_message": genai_msg,
         "propensities": nbo.get("propensities", {}),
+        # v3.0 additions
+        "all_propensity_scores": nbo.get("all_propensity_scores", []),
+        "cluster": cluster_info,
+        "travel_profile": features.travel_profile,
+        "holdings": features.holdings,
         "holdings_summary": {
-            # Basic flags
             "has_credit_card":        features.has_credit_card,
             "has_insurance":          features.has_insurance,
             "has_health_insurance":   features.has_health_insurance,
@@ -520,12 +686,10 @@ def analyze_customer(
             "has_agriculture_loan":   features.has_agriculture_loan,
             "has_business_loan":      features.has_business_loan,
             "has_deposits":           features.has_deposits,
-            # Held names and categories
             "held_card_names":              features.held_card_names,
             "held_loan_categories":         features.held_loan_categories,
             "held_investment_categories":   features.held_investment_categories,
             "held_insurance_categories":    features.held_insurance_categories,
-            # Aggregates
             "total_emi_monthly":         features.total_emi_monthly,
             "total_sip_monthly":         features.total_sip_monthly,
             "total_assets_value":        features.total_assets_value,
@@ -535,7 +699,17 @@ def analyze_customer(
             "total_credit_limit":        features.total_credit_limit,
             "total_credit_outstanding":  features.total_credit_outstanding,
         },
+        "windows": {
+            str(days): {
+                "total_spend": w.total_spend,
+                "category_spend": w.category_spend,
+                "transaction_count": w.transaction_count,
+                "digital_ratio": w.digital_ratio,
+            }
+            for days, w in features.windows.items()
+        },
     })
+
 
 
 @app.get("/api/customers/{customer_id}/holdings", tags=["Customers"])
@@ -778,11 +952,11 @@ OUTPUT: Return valid JSON only:
                             {"role": "system", "content": "You are a banking marketing API. Return only valid JSON."},
                             {"role": "user",   "content": prompt},
                         ],
-                        model="llama-3.1-8b-instant",
+                        model="qwen/qwen3.6-27b",
                         temperature=0.7,
                         max_tokens=1500,
                     )
-                    raw = resp.choices[0].message.content.strip()
+                    raw = _clean_groq_json(resp.choices[0].message.content)
                     raw = _re.sub(r"^```(?:json)?\s*", "", raw, flags=_re.MULTILINE)
                     raw = _re.sub(r"```\s*$",        "", raw, flags=_re.MULTILINE).strip()
                     parsed  = _json.loads(raw)
@@ -927,11 +1101,11 @@ OUTPUT: Return valid JSON only:
                             {"role": "system", "content": "You are a banking marketing API. Return only valid JSON."},
                             {"role": "user",   "content": prompt},
                         ],
-                        model="llama-3.1-8b-instant",
+                        model="qwen/qwen3.6-27b",
                         temperature=0.7,
                         max_tokens=300,
                     )
-                    raw = resp.choices[0].message.content.strip()
+                    raw = _clean_groq_json(resp.choices[0].message.content)
                     raw = _re.sub(r"^```(?:json)?\s*", "", raw, flags=_re.MULTILINE)
                     raw = _re.sub(r"```\s*$",        "", raw, flags=_re.MULTILINE).strip()
                     parsed   = _json.loads(raw)
@@ -987,6 +1161,12 @@ def create_campaign(
         "created_by": current_employee["name"],
         "audience_count": audience_count,
         "customer_ids": campaign.customer_ids,
+        "schedule_config": {
+            "duration_months": campaign.duration_months or 1,
+            "messages_per_day": campaign.messages_per_day or 1,
+            "preferred_time_slots": campaign.preferred_time_slots or ["morning"],
+            "total_messages": (campaign.duration_months or 1) * 30 * (campaign.messages_per_day or 1),
+        },
     }
     # Seed realistic analytics for the campaign
     sent = max(audience_count, 1)
@@ -1032,10 +1212,10 @@ def create_campaign(
     with get_db_connection() as conn:
         conn.execute(
             text("""
-                INSERT INTO campaigns (id, customer_id, customer_name, product, campaign_name, description, channel, message_preview, message_email, message_sms, age_group_strategy, status, created_at, created_by, audience_count, customer_ids, gmail_recipients, email_dispatch_status)
-                VALUES (:id, :customer_id, :customer_name, :product, :campaign_name, :description, :channel, :message_preview, :message_email, :message_sms, :age_group_strategy, :status, :created_at, :created_by, :audience_count, :customer_ids, :gmail_recipients, :email_dispatch_status)
+                INSERT INTO campaigns (id, customer_id, customer_name, product, campaign_name, description, channel, message_preview, message_email, message_sms, age_group_strategy, status, created_at, created_by, audience_count, customer_ids, gmail_recipients, email_dispatch_status, schedule_config)
+                VALUES (:id, :customer_id, :customer_name, :product, :campaign_name, :description, :channel, :message_preview, :message_email, :message_sms, :age_group_strategy, :status, :created_at, :created_by, :audience_count, :customer_ids, :gmail_recipients, :email_dispatch_status, :schedule_config)
             """),
-            {**new_campaign, "customer_ids": _json.dumps(new_campaign["customer_ids"])}
+            {**new_campaign, "customer_ids": _json.dumps(new_campaign["customer_ids"]), "schedule_config": _json.dumps(new_campaign.get("schedule_config", {}))}
         )
         conn.execute(
             text("""
@@ -1094,6 +1274,108 @@ def create_campaign(
 
     return new_campaign
 
+
+# ── AI Campaign Suggester ──────────────────────────────────────────────────────
+
+@app.get("/api/campaigns/suggestions", tags=["Campaigns"])
+def get_campaign_suggestions(current_employee=Depends(get_current_employee)):
+    """
+    Returns 3-5 AI-generated campaign suggestions based on upcoming Indian festivals,
+    national days, and customer segment distribution.
+    Combines the Indian calendar with a Groq LLM call for rich reasoning.
+    """
+    import json as _json
+    from ai_engine.indian_calendar import get_campaign_suggestions_by_events, get_upcoming_events
+
+    # Get event-based raw suggestions
+    event_suggestions = get_campaign_suggestions_by_events()
+    upcoming_events   = get_upcoming_events(max_events=3)
+
+    # Build event summary for LLM
+    event_lines = []
+    for ev in upcoming_events:
+        event_lines.append(f"- {ev['emoji']} {ev['name']} in {ev['days_away']} days (products: {', '.join(ev.get('products', [])[:3])})")
+    event_summary = "\n".join(event_lines) if event_lines else "No major events in the next 30 days."
+
+    # Get segment distribution from DB for context
+    segment_context = ""
+    try:
+        with get_db_connection() as conn:
+            res = conn.execute(text("SELECT COUNT(*) as total FROM customers")).scalar()
+            segment_context = f"Total customers: {res}"
+    except Exception:
+        segment_context = ""
+
+    # Try Groq LLM for enriched suggestions
+    llm_suggestions = []
+    try:
+        eng = get_engines()
+        genai = eng["genai_service"]
+        if not genai.use_mock:
+            import re as _re
+            prompt = f"""You are a senior banking marketing strategist at NPN Bank India.
+
+UPCOMING FESTIVALS & EVENTS:
+{event_summary}
+
+{segment_context}
+
+Based on these upcoming events, generate exactly 4 campaign suggestions.
+Each suggestion must be highly relevant to the event and actionable for the bank's marketing team.
+
+OUTPUT: Return only a valid JSON array:
+[
+  {{
+    "product": "Gold Loan",
+    "campaign_name": "Dhanteras Gold Rush 2025",
+    "urgency": "high",
+    "reason": "Gold demand surges 3x during Dhanteras. Customers with savings >5L are prime targets for gold-backed loans.",
+    "target_segment": "Conservative Saver",
+    "festival_hook": "Dhanteras",
+    "emoji": "🪙",
+    "expected_conversion": "5.2%"
+  }}
+]"""
+            resp = genai.client.chat.completions.create(
+                messages=[
+                    {"role": "system", "content": "You are a banking marketing API. Return only valid JSON."},
+                    {"role": "user", "content": prompt},
+                ],
+                model="qwen/qwen3.6-27b",
+                temperature=0.7,
+                max_tokens=1000,
+            )
+            raw = _clean_groq_json(resp.choices[0].message.content)
+            raw = _re.sub(r"^```(?:json)?\s*", "", raw, flags=_re.MULTILINE)
+            raw = _re.sub(r"```\s*$", "", raw, flags=_re.MULTILINE).strip()
+            llm_suggestions = _json.loads(raw)
+    except Exception as exc:
+        print(f"[SUGGESTIONS] Groq error: {exc} — falling back to calendar-based suggestions")
+
+    # Fallback: build suggestions from calendar directly
+    if not llm_suggestions:
+        seen_products = set()
+        for s in event_suggestions:
+            if s["product"] not in seen_products:
+                llm_suggestions.append({
+                    "product": s["product"],
+                    "campaign_name": f"{s['festival_hook']} {s['product']} Campaign",
+                    "urgency": s["urgency"],
+                    "reason": f"{s['festival_emoji']} {s['festival_hook']} is approaching in {s['days_away']} days — strong demand for {s['product']}.",
+                    "target_segment": "All Customers",
+                    "festival_hook": s["festival_hook"],
+                    "emoji": s.get("festival_emoji", "🎉"),
+                    "expected_conversion": "3.5%",
+                })
+                seen_products.add(s["product"])
+                if len(llm_suggestions) >= 4:
+                    break
+
+    return {
+        "suggestions": llm_suggestions,
+        "upcoming_events": upcoming_events,
+        "generated_at": datetime.now().isoformat(),
+    }
 
 
 @app.get("/api/campaigns", tags=["Campaigns"])
@@ -1347,7 +1629,7 @@ OUTPUT: Return valid JSON with exactly these fields:
                 temperature=0.7,
                 max_tokens=2000,
             )
-            content = response.choices[0].message.content.strip()
+            content = _clean_groq_json(response.choices[0].message.content)
             # Strip markdown fences if present
             content = _re.sub(r"^```(?:json)?\s*", "", content, flags=_re.MULTILINE)
             content = _re.sub(r"```\s*$", "", content, flags=_re.MULTILINE).strip()
@@ -1669,7 +1951,7 @@ Return valid JSON:
                 temperature=0.3,
                 max_tokens=2000,
             )
-            content = response.choices[0].message.content.strip()
+            content = _clean_groq_json(response.choices[0].message.content)
             content = _re.sub(r"^```(?:json)?\s*", "", content, flags=_re.MULTILINE)
             content = _re.sub(r"```\s*$", "", content, flags=_re.MULTILINE).strip()
             return _json.loads(content)
@@ -1934,3 +2216,4 @@ def health():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("api_server:app", host="0.0.0.0", port=8000, reload=True)
+

@@ -219,8 +219,26 @@ class CustomerFeatureSet:
     held_loan_categories: List[str] = field(default_factory=list)        # e.g. ["Personal", "Home"]
     held_card_names: List[str] = field(default_factory=list)             # e.g. ["Diners Black"]
 
+    # ── Travel profile (computed from transactions) ───────────────────────────
+    travel_profile: Dict[str, Any] = field(default_factory=lambda: {
+        "is_frequent_flyer": False,         # >2 airline txns in 90 days
+        "flight_spend_90d": 0.0,
+        "hotel_spend_90d": 0.0,
+        "international_txn_count": 0,       # MER20 (international) transactions
+        "avg_trip_value": 0.0,
+        "prefers_flight": False,            # airline spend > hotel spend
+        "top_travel_merchant": "",
+        "total_travel_spend_90d": 0.0,
+        "travel_frequency": "none",         # none / occasional / frequent
+    })
+
+    # ── Cluster assignment (populated by ClusteringEngine) ────────────────────
+    cluster_label: str = "Standard"        # e.g. "Ambitious Professional"
+    cluster_id: int = -1
+    cluster_color: str = "#64748b"
+
     # ── Feature snapshot for audit ────────────────────────────────────────────
-    feature_version: str = "2.1"
+    feature_version: str = "3.0"
 
 
 class FeatureEngine:
@@ -270,6 +288,7 @@ class FeatureEngine:
             fs = self._compute_trends(fs, cust_tx)
             fs = self._detect_recurring(fs, cust_tx)
             fs = self._compute_holdings(fs, customer_id)
+            fs = self._compute_travel_profile(fs, cust_tx)
             fs = self._compute_data_quality(fs, customer_data, cust_tx)
 
         except Exception as exc:
@@ -277,6 +296,72 @@ class FeatureEngine:
             fs.data_warnings.append(f"Feature computation error: {exc}")
             fs.data_quality_score = max(0.1, fs.data_quality_score - 0.4)
 
+        return fs
+
+    # ── Travel profile computation ────────────────────────────────────────────
+
+    def _compute_travel_profile(self, fs: "CustomerFeatureSet", cust_tx: pd.DataFrame) -> "CustomerFeatureSet":
+        """Detect travel behaviour from transaction data."""
+        try:
+            from datetime import datetime, timedelta
+            ref_date = cust_tx["transaction_date"].max()
+            cutoff_90 = ref_date - timedelta(days=90)
+            tx_90 = cust_tx[cust_tx["transaction_date"] >= cutoff_90]
+
+            # Airline transactions (MER00)
+            airline_tx = tx_90[
+                tx_90["merchant_id"].astype(str).str.startswith("MER00")
+            ]
+            # Hotel transactions (MER08)
+            hotel_tx = tx_90[
+                tx_90["merchant_id"].astype(str).str.startswith("MER08")
+            ]
+            # International transactions (MER20)
+            intl_tx = tx_90[
+                tx_90["merchant_id"].astype(str).str.startswith("MER20")
+            ]
+
+            flight_spend = float(airline_tx["amount"].sum()) if not airline_tx.empty else 0.0
+            hotel_spend = float(hotel_tx["amount"].sum()) if not hotel_tx.empty else 0.0
+            intl_count = len(intl_tx)
+            total_travel = flight_spend + hotel_spend
+
+            airline_count = len(airline_tx)
+            is_frequent_flyer = airline_count >= 2
+            prefers_flight = flight_spend >= hotel_spend
+
+            # Top travel merchant by spend
+            travel_tx = tx_90[
+                tx_90["merchant_id"].astype(str).str.startswith(("MER00", "MER08"))
+            ]
+            top_merchant = ""
+            if not travel_tx.empty and "transaction_description" in travel_tx.columns:
+                top_merchant = str(
+                    travel_tx.groupby("transaction_description")["amount"].sum().idxmax()
+                )
+
+            avg_trip = (total_travel / max(airline_count, 1)) if airline_count > 0 else 0.0
+
+            if airline_count == 0:
+                frequency = "none"
+            elif airline_count <= 1:
+                frequency = "occasional"
+            else:
+                frequency = "frequent"
+
+            fs.travel_profile = {
+                "is_frequent_flyer": is_frequent_flyer,
+                "flight_spend_90d": round(flight_spend, 2),
+                "hotel_spend_90d": round(hotel_spend, 2),
+                "international_txn_count": intl_count,
+                "avg_trip_value": round(avg_trip, 2),
+                "prefers_flight": prefers_flight,
+                "top_travel_merchant": top_merchant,
+                "total_travel_spend_90d": round(total_travel, 2),
+                "travel_frequency": frequency,
+            }
+        except Exception as exc:
+            logger.warning("_compute_travel_profile error: %s", exc)
         return fs
 
     # ── Transaction cleaning ─────────────────────────────────────────────────

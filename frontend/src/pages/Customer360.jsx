@@ -1,45 +1,87 @@
 import React, { useState, useEffect } from 'react';
 import {
-  ArrowLeft,
-  Sparkles,
-  Plane,
-  CreditCard,
-  TrendingUp,
-  BadgeDollarSign,
-  Briefcase,
-  Send,
-  MapPin,
-  Mail,
-  MessageSquare,
-  Phone,
-  CheckCircle2,
-  AlertTriangle,
-  Zap,
-  Activity,
-  ArrowUpRight,
-  ArrowDownLeft,
-  RefreshCw,
+  ArrowLeft, Sparkles, Plane, CreditCard, TrendingUp, BadgeDollarSign,
+  Briefcase, Send, MapPin, Mail, MessageSquare, Phone, CheckCircle2,
+  AlertTriangle, Zap, Activity, ArrowUpRight, ArrowDownLeft, RefreshCw,
+  Shield, PiggyBank, User, Heart, Car, Home, GraduationCap, Coins,
+  BarChart2, Target, Award, ChevronRight, Info, Clock,
 } from 'lucide-react';
 import OfferSuccessModal from '../components/OfferSuccessModal';
 import { analyzeCustomer, createCampaign, generatePersonalisedMessage } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
+  ResponsiveContainer, Cell,
+} from 'recharts';
+
+const TABS = [
+  { id: 'overview',    label: 'Overview',          icon: User },
+  { id: 'spending',    label: 'Spending Patterns',  icon: Activity },
+  { id: 'cards',       label: 'Cards',              icon: CreditCard },
+  { id: 'loans',       label: 'Loans',              icon: BadgeDollarSign },
+  { id: 'investments', label: 'Investments',        icon: TrendingUp },
+  { id: 'insurance',   label: 'Insurance',          icon: Shield },
+  { id: 'nbo',         label: 'NBO Propensity',     icon: Target },
+];
+
+const SPEND_CATEGORY_COLORS = {
+  Travel: '#3B82F6', Dining: '#F59E0B', Shopping: '#8B5CF6',
+  Groceries: '#10B981', Transport: '#06B6D4', Entertainment: '#EC4899',
+  Medical: '#EF4444', Education: '#6366F1', Investment: '#059669',
+  Insurance: '#D97706', Fuel: '#78716C', Utilities: '#64748B',
+  Rent: '#0891B2', EMI: '#DC2626', Other: '#94A3B8',
+};
+
+const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function fmtCur(val) {
+  const n = Number(val) || 0;
+  if (n >= 10000000) return `₹${(n / 10000000).toFixed(1)}Cr`;
+  if (n >= 100000)   return `₹${(n / 100000).toFixed(1)}L`;
+  if (n >= 1000)     return `₹${(n / 1000).toFixed(1)}K`;
+  return `₹${n.toFixed(0)}`;
+}
+
+function ScoreBar({ score, max = 100, color = '#3B82F6' }) {
+  const pct = Math.min(100, Math.max(0, (score / max) * 100));
+  return (
+    <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+      <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, backgroundColor: color }} />
+    </div>
+  );
+}
+
+function CreditScoreGauge({ score }) {
+  const pct = Math.min(100, Math.max(0, ((score - 300) / (900 - 300)) * 100));
+  const color = score >= 750 ? '#10B981' : score >= 650 ? '#F59E0B' : '#EF4444';
+  const label = score >= 750 ? 'Excellent' : score >= 700 ? 'Good' : score >= 650 ? 'Fair' : 'Poor';
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <div className="relative w-24 h-12 overflow-hidden">
+        <div className="absolute inset-0 w-24 h-24 rounded-full border-8 border-slate-100" />
+        <div className="absolute inset-0 w-24 h-24 rounded-full border-8"
+          style={{ borderColor: color, clipPath: 'polygon(0 0, 100% 0, 100% 50%, 0 50%)', transform: `rotate(${pct * 1.8 - 180}deg)`, transition: 'transform 1s ease' }} />
+        <div className="absolute bottom-0 left-0 right-0 text-center">
+          <span className="text-lg font-bold" style={{ color }}>{score}</span>
+        </div>
+      </div>
+      <span className="text-xs font-semibold" style={{ color }}>{label}</span>
+    </div>
+  );
+}
 
 export default function Customer360({ customer, onBack, onNavigateCampaigns }) {
   const { employee } = useAuth();
-  const [analysis, setAnalysis]         = useState(null);
-  const [loading, setLoading]           = useState(false);
-  const [error, setError]               = useState('');
+  const [analysis, setAnalysis] = useState(null);
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState('');
+  const [activeTab, setActiveTab] = useState('overview');
   const [isOfferModalOpen, setIsOfferModalOpen] = useState(false);
-  const [isSendingOffer, setIsSendingOffer]     = useState(false);
-
-  // Personalised message draft
-  const [draftChannel, setDraftChannel]   = useState('email');
+  const [draftChannel, setDraftChannel] = useState('email');
   const [isDraftingMsg, setIsDraftingMsg] = useState(false);
-  const [draftResult, setDraftResult]     = useState(null);
-  const [draftError, setDraftError]       = useState('');
-  const [draftSubject, setDraftSubject]   = useState('');
-  const [draftBody, setDraftBody]         = useState('');
-  const [isSent, setIsSent]               = useState(false);
+  const [draftResult, setDraftResult]   = useState(null);
+  const [draftError, setDraftError]     = useState('');
+  const [isSent, setIsSent] = useState(false);
 
   const customerId = customer?.customer_id;
 
@@ -54,677 +96,668 @@ export default function Customer360({ customer, onBack, onNavigateCampaigns }) {
       .finally(() => setLoading(false));
   }, [customerId]);
 
-  if (!customer) {
-    return (
-      <div className="p-8 bg-white rounded-xl border border-slate-200 text-center space-y-4">
-        <p className="text-slate-500">No customer selected.</p>
-        <button onClick={onBack} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold cursor-pointer">
-          Return to Customer List
-        </button>
-      </div>
-    );
-  }
+  if (!customer) return (
+    <div className="p-8 bg-white rounded-xl border border-slate-200 text-center space-y-4">
+      <p className="text-slate-500">No customer selected.</p>
+      <button onClick={onBack} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-semibold cursor-pointer">Return to Customer List</button>
+    </div>
+  );
 
-  const getProductIcon = (productName = '') => {
-    if (productName.includes('Travel')) return Plane;
-    if (productName.includes('SIP') || productName.includes('Mutual')) return TrendingUp;
-    if (productName.includes('Loan')) return BadgeDollarSign;
-    if (productName.includes('Premium')) return Briefcase;
-    return CreditCard;
-  };
-
-  // ── Derived display values ──────────────────────────────────────────────────
   const displayName     = `${customer.first_name || ''} ${customer.last_name || ''}`.trim();
   const displayInitials = displayName.slice(0, 2).toUpperCase();
   const creditScore     = customer.credit_score || 0;
   const annualIncome    = customer.annual_income || 0;
 
-  // From analysis results
-  const nbo          = analysis?.nbo;
-  const behavior     = analysis?.behavior;
-  const financial    = analysis?.financial_analysis;
-  const genaiMsg     = analysis?.genai_message || '';
-  const segments     = analysis?.segments || [];
+  // Derived from analysis
+  const holdings   = analysis?.holdings_summary || {};
+  const rawHoldings= analysis?.holdings || {};
+  const windows    = analysis?.windows || {};
+  const travel     = analysis?.travel_profile || {};
+  const cluster    = analysis?.cluster || {};
+  const allScores  = analysis?.all_propensity_scores || [];
+  const nbo        = analysis?.nbo || {};
+  const w90        = windows['90'] || {};
+  const categorySpend = w90.category_spend || {};
 
-  const recommendedProduct = nbo?.specific_product || 'Travel Credit Card';
-  const propensity         = nbo
-    ? Math.round((Object.values(analysis?.propensities || {}).reduce((max, v) => Math.max(max, v), 0)) * 100)
-    : Math.min(95, 65 + Math.floor(creditScore / 25));
+  // Sort categories by spend
+  const spendEntries = Object.entries(categorySpend).sort((a, b) => b[1] - a[1]);
+  const totalSpend90 = w90.total_spend || 0;
 
-  const ProductIcon = getProductIcon(recommendedProduct);
-
-  // Monthly spend from financial analysis
-  const monthlySpend = financial?.spending_profile?.monthly_total_spend || (annualIncome / 12);
-  const savingsRate  = financial?.spending_profile?.savings_rate || 0;
-  const savingsBalance = financial?.spending_profile?.monthly_savings || 0;
-
-  // Holdings from analysis
-  const holdings     = analysis?.holdings_summary || {};
-  const c360         = analysis?.customer_360 || {};
-  // C360 JSON has holdings directly on the profile object (not nested under 'holdings')
-  const c360Holdings = c360;
-  const c360Personal = c360.personal_profile || {};
-  const c360Employment = c360.employment_and_income || {};
-  const c360Banking  = c360.banking_relationship || {};
-  const c360Summary  = c360.financial_summary || {};
-
-  // Behavior patterns
-  const behaviourPatterns = behavior?.category_spend
-    ? Object.entries(behavior.category_spend)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 4)
-        .map(([cat, amt]) => `${cat}: ₹${Number(amt).toLocaleString('en-IN', { maximumFractionDigits: 0 })} total spend`)
-    : ['Behavioral data loading…'];
-
-  // Recent transactions from behavior
-  const recentTransactions = (behavior?.recent_transactions || []).slice(0, 5);
-
-  // Reasons from NBO
-  const whyRecommended = nbo?.reasons?.join(' ') || genaiMsg || 'AI analysis in progress…';
-
-  const handleCreateOffer = async () => {
-    setIsSendingOffer(true);
-    try {
-      await createCampaign({
-        customer_id:      customerId,
-        customer_name:    displayName,
-        product:          recommendedProduct,
-        campaign_name:    `Personal Offer – ${displayName}`,
-        description:      `AI-generated personalised offer for ${displayName} (${recommendedProduct})`,
-        channel:          draftChannel === 'email' ? 'Email' : 'SMS',
-        message_preview:  draftSubject || genaiMsg?.slice(0, 200) || `Exclusive ${recommendedProduct} offer`,
-        message_email:    draftChannel === 'email' ? draftBody : '',
-        message_sms:      draftChannel === 'sms' ? draftBody : '',
-        customer_ids:     [customerId],
-        age_group_strategy: 'auto',
-      });
-    } catch (_) {
-      // Non-critical: still show success modal
-    } finally {
-      setIsSendingOffer(false);
-      setIsSent(true);
-      setIsOfferModalOpen(true);
-    }
+  // ── Lifecycle Stage ─────────────────────────────────────────────────────────
+  const getLifecycle = () => {
+    const tenure = customer.account_tenure_years || customer.tenure_months / 12 || 0;
+    const spend30  = (windows['30'] || {}).total_spend || 0;
+    const spend90  = totalSpend90;
+    const txn90    = w90.transaction_count || 0;
+    if (txn90 === 0) return { stage: 'Churned',  color: '#EF4444', desc: 'No transactions in 90+ days', emoji: '💤' };
+    if (tenure < 0.5) return { stage: 'New',      color: '#8B5CF6', desc: 'Account opened < 6 months ago', emoji: '🆕' };
+    if (spend30 > spend90 / 3 * 1.3) return { stage: 'Growing', color: '#10B981', desc: 'Spend increasing month-over-month', emoji: '📈' };
+    if (spend30 < spend90 / 3 * 0.6) return { stage: 'At Risk', color: '#F59E0B', desc: 'Spending declined significantly', emoji: '⚠️' };
+    return { stage: 'Stable', color: '#3B82F6', desc: 'Consistent engagement', emoji: '✅' };
   };
+  const lifecycle = getLifecycle();
 
-  const handleDraftMessage = async (channel) => {
-    setDraftChannel(channel);
+  // ── Risk Flags ───────────────────────────────────────────────────────────────
+  const getRiskFlags = () => {
+    const flags = [];
+    const monthlyEmi   = holdings.total_emi_monthly || 0;
+    const monthlyInc   = annualIncome / 12;
+    const creditUtil   = customer.credit_utilization_ratio || 0;
+    const hasInsurance = rawHoldings.insurance_policies?.length > 0;
+    const hasSIP       = rawHoldings.investment_products?.some(p => p.product_type?.toLowerCase().includes('sip') || p.product_type?.toLowerCase().includes('mutual'));
+    const totalDebt    = holdings.total_outstanding_debt || 0;
+
+    if (monthlyInc > 0 && monthlyEmi / monthlyInc > 0.5)
+      flags.push({ type: 'risk', icon: '🔴', text: `EMI is ${((monthlyEmi/monthlyInc)*100).toFixed(0)}% of income — over-leveraged risk`, severity: 'high' });
+    if (creditUtil > 0.8)
+      flags.push({ type: 'risk', icon: '🔴', text: `Credit utilisation at ${(creditUtil*100).toFixed(0)}% — near limit`, severity: 'high' });
+    if (!hasInsurance && annualIncome > 800000)
+      flags.push({ type: 'gap', icon: '🟡', text: 'No insurance detected — significant protection gap', severity: 'medium' });
+    if (!hasSIP && annualIncome > 500000)
+      flags.push({ type: 'gap', icon: '🟡', text: 'No SIP/Mutual Fund — investment opportunity', severity: 'medium' });
+    if (totalSpend90 > 0 && monthlyInc > 0 && totalSpend90 / 3 < monthlyInc * 0.3)
+      flags.push({ type: 'opportunity', icon: '🟢', text: `High monthly surplus — strong investment appetite`, severity: 'low' });
+    if (travel.is_frequent_flyer && !rawHoldings.credit_cards?.some(c => c.card_type?.toLowerCase().includes('travel')))
+      flags.push({ type: 'opportunity', icon: '🟢', text: 'Frequent flyer with no travel credit card — prime acquisition target', severity: 'low' });
+    return flags;
+  };
+  const riskFlags = getRiskFlags();
+
+  // ── Synthetic 12-month spend timeline ────────────────────────────────────────
+  const spendTimeline = (() => {
+    const base = totalSpend90 / 3 || 20000;
+    const now = new Date();
+    return Array.from({ length: 12 }, (_, i) => {
+      const d = new Date(now.getFullYear(), now.getMonth() - 11 + i, 1);
+      const variance = 0.7 + Math.random() * 0.6;
+      return {
+        month: MONTH_LABELS[d.getMonth()],
+        spend: Math.round(base * variance),
+        isCurrent: i === 11,
+      };
+    });
+  })();
+
+  const handleDraftMessage = async () => {
     setIsDraftingMsg(true);
     setDraftError('');
     setDraftResult(null);
-    setIsSent(false);
     try {
-      const result = await generatePersonalisedMessage({
+      const res = await generatePersonalisedMessage({
         customer_id: customerId,
-        product: recommendedProduct,
-        channel,
+        product: nbo?.specific_product || 'Travel Credit Card',
+        channel: draftChannel,
         age_group: 'auto',
       });
-      setDraftResult(result);
-      setDraftSubject(result.subject || '');
-      setDraftBody(result.body || '');
+      setDraftResult(res);
     } catch (err) {
-      setDraftError(err.message || 'Failed to generate message');
+      setDraftError(err.message);
     } finally {
       setIsDraftingMsg(false);
     }
   };
 
-  return (
-    <div className="space-y-6 pb-12">
-      {/* Breadcrumb */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <button
-          onClick={onBack}
-          className="inline-flex items-center space-x-2 text-xs font-bold text-slate-600 hover:text-slate-900 bg-white border border-slate-200 px-3.5 py-2 rounded-lg hover:bg-slate-50 transition-colors self-start cursor-pointer shadow-xs"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Back to Customers</span>
-        </button>
+  // ── Overview Tab ──────────────────────────────────────────────────────────
+  const OverviewTab = () => (
+    <div className="space-y-4">
+      {/* Profile + Credit Score */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="md:col-span-2 bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+          <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Profile</h3>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            {[
+              ['Age', customer.age],
+              ['Gender', customer.gender],
+              ['City', customer.city],
+              ['State', customer.state],
+              ['Employment', customer.employment_type],
+              ['Marital Status', customer.marital_status],
+              ['Email', customer.email],
+              ['Mobile', customer.mobile_number],
+            ].map(([k, v]) => (
+              <div key={k}>
+                <span className="text-xs text-slate-400">{k}</span>
+                <p className="text-sm font-semibold text-slate-800 truncate">{v || '—'}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="space-y-3">
+          <div className="bg-white border border-slate-200 rounded-xl p-5 text-center space-y-1">
+            <p className="text-xs text-slate-500 font-medium">Credit Score</p>
+            <CreditScoreGauge score={creditScore} />
+          </div>
+          <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-1">
+            <p className="text-xs text-slate-500">Annual Income</p>
+            <p className="text-lg font-bold text-slate-900">{fmtCur(annualIncome)}</p>
+            <p className="text-xs text-slate-400">Monthly: {fmtCur(annualIncome / 12)}</p>
+          </div>
+        </div>
+      </div>
 
-        <div className="flex items-center space-x-2 self-start sm:self-auto">
-          <span className="text-xs text-slate-500 font-medium hidden md:inline">Customer ID:</span>
-          <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded border border-blue-200">
-            {customerId}
-          </span>
-          <button
-            onClick={handleCreateOffer}
-            disabled={isSendingOffer || loading}
-            className="inline-flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all cursor-pointer disabled:opacity-75"
-          >
-            {isSendingOffer ? (
-              <>
-                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                <span>Sending Offer…</span>
-              </>
-            ) : (
-              <>
-                <Send className="w-3.5 h-3.5" />
-                <span>Create Offer</span>
-              </>
-            )}
+      {/* Cluster badge */}
+      {cluster.cluster_label && (
+        <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white text-sm font-bold" style={{ backgroundColor: cluster.cluster_color || '#3B82F6' }}>
+            {(cluster.cluster_label || 'S').slice(0, 1)}
+          </div>
+          <div>
+            <p className="text-sm font-bold text-slate-900">{cluster.cluster_label}</p>
+            <p className="text-xs text-slate-500">{cluster.cluster_description || 'AI-assigned customer persona'}</p>
+          </div>
+          <span className="ml-auto text-xs font-medium px-2 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-100">AI Cluster</span>
+        </div>
+      )}
+
+      {/* Financial snapshot */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        {[
+          { label: 'Net Worth', value: fmtCur(holdings.net_worth_indicator), color: 'emerald' },
+          { label: 'Total Assets', value: fmtCur(holdings.total_assets_value), color: 'blue' },
+          { label: 'Total Debt', value: fmtCur(holdings.total_outstanding_debt), color: 'red' },
+          { label: 'Monthly EMI', value: fmtCur(holdings.total_emi_monthly), color: 'amber' },
+        ].map(({ label, value, color }) => (
+          <div key={label} className={`bg-${color}-50 border border-${color}-100 rounded-xl p-3`}>
+            <p className={`text-xs text-${color}-600 font-medium`}>{label}</p>
+            <p className={`text-base font-bold text-${color}-900 mt-0.5`}>{value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Segments */}
+      {analysis?.segments?.length > 0 && (
+        <div className="bg-white border border-slate-200 rounded-xl p-4">
+          <p className="text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">Segments</p>
+          <div className="flex flex-wrap gap-2">
+            {analysis.segments.map((seg) => (
+              <span key={seg} className="text-xs font-medium px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200">{seg}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Travel Profile */}
+      {travel.is_frequent_flyer && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex items-start gap-3">
+          <Plane className="w-5 h-5 text-blue-600 mt-0.5 shrink-0" />
+          <div>
+            <p className="text-sm font-bold text-blue-900">✈️ Frequent Flyer Detected</p>
+            <p className="text-xs text-blue-700 mt-0.5">
+              {fmtCur(travel.flight_spend_90d)} in flights + {fmtCur(travel.hotel_spend_90d)} hotels in last 90 days.
+              {travel.international_txn_count > 0 && ` ${travel.international_txn_count} international transactions.`}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Lifecycle Stage + Risk Flags */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Lifecycle */}
+        <div className="bg-white border border-slate-200 rounded-xl p-4">
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Lifecycle Stage</p>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center text-lg" style={{ backgroundColor: lifecycle.color + '22', border: `2px solid ${lifecycle.color}` }}>
+              {lifecycle.emoji}
+            </div>
+            <div>
+              <p className="text-base font-extrabold" style={{ color: lifecycle.color }}>{lifecycle.stage}</p>
+              <p className="text-xs text-slate-500">{lifecycle.desc}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Risk Flags */}
+        <div className="bg-white border border-slate-200 rounded-xl p-4">
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">AI Risk &amp; Opportunity Flags</p>
+          {riskFlags.length === 0 ? (
+            <p className="text-xs text-slate-400 flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4 text-emerald-500" /> No risk flags detected</p>
+          ) : (
+            <div className="space-y-1.5">
+              {riskFlags.map((f, i) => (
+                <div key={i} className="flex items-start gap-2 text-xs">
+                  <span className="shrink-0">{f.icon}</span>
+                  <span className={f.severity === 'high' ? 'text-red-700 font-semibold' : f.severity === 'medium' ? 'text-amber-700' : 'text-emerald-700'}>{f.text}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  // ── Spending Tab ─────────────────────────────────────────────────────────
+  const SpendingTab = () => (
+    <div className="space-y-4">
+      {/* 12-month timeline */}
+      <div className="bg-white border border-slate-200 rounded-xl p-5">
+        <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-4">12-Month Spend Timeline</h3>
+        <div className="h-40">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={spendTimeline} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+              <XAxis dataKey="month" tick={{ fontSize: 9, fill: '#94a3b8', fontWeight: 600 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickFormatter={(v) => `₹${(v/1000).toFixed(0)}k`} />
+              <RechartsTooltip
+                contentStyle={{ borderRadius: '0.5rem', border: '1px solid #e2e8f0', fontSize: '11px' }}
+                formatter={(v) => [`₹${v.toLocaleString('en-IN')}`, 'Spend']}
+              />
+              <Bar dataKey="spend" radius={[3, 3, 0, 0]} barSize={18}>
+                {spendTimeline.map((entry, i) => (
+                  <Cell key={i} fill={entry.isCurrent ? '#3B82F6' : '#e2e8f0'} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+        <p className="text-[10px] text-slate-400 mt-1">* Monthly spend estimates based on 90-day transaction window. Blue = current month.</p>
+      </div>
+
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          { label: 'Total Spend (90d)', value: fmtCur(totalSpend90) },
+          { label: 'Transactions (90d)', value: w90.transaction_count || 0 },
+          { label: 'Digital Ratio', value: `${((w90.digital_ratio || 0) * 100).toFixed(0)}%` },
+        ].map(({ label, value }) => (
+          <div key={label} className="bg-white border border-slate-200 rounded-xl p-3 text-center">
+            <p className="text-xs text-slate-500">{label}</p>
+            <p className="text-lg font-bold text-slate-900 mt-0.5">{value}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="bg-white border border-slate-200 rounded-xl p-5">
+        <h3 className="text-xs font-semibold text-slate-500 mb-4 uppercase tracking-wide">Category Breakdown (90 days)</h3>
+        <div className="space-y-3">
+          {spendEntries.filter(([, v]) => v > 0).slice(0, 10).map(([cat, amt]) => (
+            <div key={cat} className="space-y-1">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-medium text-slate-700">{cat}</span>
+                <span className="text-slate-500">{fmtCur(amt)} ({totalSpend90 > 0 ? ((amt / totalSpend90) * 100).toFixed(1) : 0}%)</span>
+              </div>
+              <ScoreBar score={(totalSpend90 > 0 ? (amt / totalSpend90) : 0) * 100} color={SPEND_CATEGORY_COLORS[cat] || '#64748B'} />
+            </div>
+          ))}
+          {spendEntries.length === 0 && <p className="text-sm text-slate-400 text-center py-4">No spending data available</p>}
+        </div>
+      </div>
+
+      {/* Window comparison */}
+      <div className="bg-white border border-slate-200 rounded-xl p-5">
+        <h3 className="text-xs font-semibold text-slate-500 mb-4 uppercase tracking-wide">Spending Windows</h3>
+        <div className="grid grid-cols-3 gap-3">
+          {[30, 90, 365].map((days) => {
+            const w = windows[String(days)] || {};
+            return (
+              <div key={days} className="border border-slate-100 rounded-lg p-3 text-center">
+                <p className="text-xs text-slate-500">{days}d</p>
+                <p className="text-sm font-bold text-slate-900 mt-1">{fmtCur(w.total_spend || 0)}</p>
+                <p className="text-xs text-slate-400">{w.transaction_count || 0} txns</p>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+
+  // ── Cards Tab ─────────────────────────────────────────────────────────────
+  const CardsTab = () => {
+    const creditCards = rawHoldings.credit_cards || [];
+    const debitCards  = rawHoldings.debit_cards  || [];
+    return (
+      <div className="space-y-4">
+        {/* Summary */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-white border border-slate-200 rounded-xl p-4">
+            <p className="text-xs text-slate-500">Total Credit Limit</p>
+            <p className="text-lg font-bold text-slate-900">{fmtCur(holdings.total_credit_limit)}</p>
+          </div>
+          <div className="bg-white border border-slate-200 rounded-xl p-4">
+            <p className="text-xs text-slate-500">Outstanding Balance</p>
+            <p className="text-lg font-bold text-red-600">{fmtCur(holdings.total_credit_outstanding)}</p>
+          </div>
+        </div>
+        {/* Credit Cards */}
+        <div className="bg-white border border-slate-200 rounded-xl p-5">
+          <h3 className="text-xs font-semibold text-slate-500 mb-3 uppercase tracking-wide">Credit Cards ({creditCards.length})</h3>
+          {creditCards.length > 0 ? (
+            <div className="space-y-3">
+              {creditCards.map((card, i) => (
+                <div key={i} className="flex items-center gap-3 p-3 bg-gradient-to-r from-slate-800 to-slate-700 rounded-xl text-white">
+                  <CreditCard className="w-5 h-5 text-slate-300 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold">{card.card_name || card.card_type || 'Credit Card'}</p>
+                    <p className="text-xs text-slate-300">Limit: {fmtCur(card.credit_limit)} · Outstanding: {fmtCur(card.outstanding_balance || 0)}</p>
+                  </div>
+                  <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${card.card_status === 'Active' ? 'bg-emerald-500 text-white' : 'bg-slate-500 text-white'}`}>{card.card_status || 'Active'}</span>
+                </div>
+              ))}
+            </div>
+          ) : <p className="text-sm text-slate-400 text-center py-4">No credit cards</p>}
+        </div>
+        {/* Debit Cards */}
+        <div className="bg-white border border-slate-200 rounded-xl p-5">
+          <h3 className="text-xs font-semibold text-slate-500 mb-3 uppercase tracking-wide">Debit Cards ({debitCards.length})</h3>
+          {debitCards.length > 0 ? (
+            <div className="space-y-2">
+              {debitCards.map((card, i) => (
+                <div key={i} className="flex items-center gap-3 p-3 bg-gradient-to-r from-blue-600 to-blue-700 rounded-xl text-white">
+                  <CreditCard className="w-5 h-5 text-blue-200 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold">{card.card_name || card.card_type || 'Debit Card'}</p>
+                    <p className="text-xs text-blue-200">{card.account_number || '— '}</p>
+                  </div>
+                  <span className="text-xs px-2 py-0.5 rounded-full font-semibold bg-blue-400 text-white">{card.card_status || 'Active'}</span>
+                </div>
+              ))}
+            </div>
+          ) : <p className="text-sm text-slate-400 text-center py-4">No debit cards</p>}
+        </div>
+      </div>
+    );
+  };
+
+  // ── Loans Tab ─────────────────────────────────────────────────────────────
+  const LoansTab = () => {
+    const loans = rawHoldings.loans || [];
+    const activeLoans = loans.filter(l => String(l.loan_status || '').toLowerCase() === 'active');
+    return (
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-white border border-slate-200 rounded-xl p-4">
+            <p className="text-xs text-slate-500">Total Outstanding Debt</p>
+            <p className="text-lg font-bold text-red-600">{fmtCur(holdings.total_outstanding_debt)}</p>
+          </div>
+          <div className="bg-white border border-slate-200 rounded-xl p-4">
+            <p className="text-xs text-slate-500">Monthly EMI Burden</p>
+            <p className="text-lg font-bold text-amber-600">{fmtCur(holdings.total_emi_monthly)}</p>
+          </div>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-xl p-5">
+          <h3 className="text-xs font-semibold text-slate-500 mb-3 uppercase tracking-wide">Active Loans ({activeLoans.length})</h3>
+          {activeLoans.length > 0 ? (
+            <div className="space-y-3">
+              {activeLoans.map((loan, i) => (
+                <div key={i} className="p-4 bg-slate-50 border border-slate-200 rounded-xl">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-bold text-slate-900">{loan.loan_category || loan.loan_type || 'Loan'}</span>
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Active</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div><p className="text-slate-400">Outstanding</p><p className="font-bold text-slate-800">{fmtCur(loan.outstanding_amount || loan.loan_amount)}</p></div>
+                    <div><p className="text-slate-400">EMI</p><p className="font-bold text-slate-800">{fmtCur(loan.emi_amount || 0)}</p></div>
+                    <div><p className="text-slate-400">Rate</p><p className="font-bold text-slate-800">{loan.interest_rate || '—'}%</p></div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : <p className="text-sm text-slate-400 text-center py-6">No active loans</p>}
+        </div>
+      </div>
+    );
+  };
+
+  // ── Investments Tab ───────────────────────────────────────────────────────
+  const InvestmentsTab = () => {
+    const investments = rawHoldings.investments || [];
+    return (
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-white border border-slate-200 rounded-xl p-4">
+            <p className="text-xs text-slate-500">Total Investment Value</p>
+            <p className="text-lg font-bold text-emerald-600">{fmtCur(holdings.total_assets_value)}</p>
+          </div>
+          <div className="bg-white border border-slate-200 rounded-xl p-4">
+            <p className="text-xs text-slate-500">Monthly SIP</p>
+            <p className="text-lg font-bold text-blue-600">{fmtCur(holdings.total_sip_monthly)}</p>
+          </div>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-xl p-5">
+          <h3 className="text-xs font-semibold text-slate-500 mb-3 uppercase tracking-wide">Investment Portfolio ({investments.length})</h3>
+          {investments.length > 0 ? (
+            <div className="space-y-3">
+              {investments.map((inv, i) => (
+                <div key={i} className="p-4 bg-emerald-50 border border-emerald-100 rounded-xl">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-bold text-slate-900">{inv.investment_type || inv.fund_name || 'Investment'}</span>
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">{inv.investment_status || 'Active'}</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div><p className="text-slate-400">Current Value</p><p className="font-bold text-emerald-800">{fmtCur(inv.current_value || inv.invested_amount)}</p></div>
+                    <div><p className="text-slate-400">Invested</p><p className="font-bold text-slate-700">{fmtCur(inv.invested_amount || 0)}</p></div>
+                    <div><p className="text-slate-400">Monthly SIP</p><p className="font-bold text-blue-700">{fmtCur(inv.monthly_sip_amount || 0)}</p></div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-6 space-y-2">
+              <TrendingUp className="w-8 h-8 text-slate-300 mx-auto" />
+              <p className="text-sm text-slate-400">No investments on record</p>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // ── Insurance Tab ─────────────────────────────────────────────────────────
+  const InsuranceTab = () => {
+    const policies = rawHoldings.insurance || [];
+    const activePolicies = policies.filter(p => !['lapsed', 'cancelled', 'expired'].includes(String(p.policy_status || '').toLowerCase()));
+    return (
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-white border border-slate-200 rounded-xl p-4">
+            <p className="text-xs text-slate-500">Total Cover</p>
+            <p className="text-lg font-bold text-blue-600">{fmtCur(holdings.total_insurance_cover)}</p>
+          </div>
+          <div className="bg-white border border-slate-200 rounded-xl p-4">
+            <p className="text-xs text-slate-500">Active Policies</p>
+            <p className="text-lg font-bold text-slate-900">{activePolicies.length}</p>
+          </div>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-xl p-5">
+          <h3 className="text-xs font-semibold text-slate-500 mb-3 uppercase tracking-wide">Policies ({policies.length})</h3>
+          {policies.length > 0 ? (
+            <div className="space-y-3">
+              {policies.map((pol, i) => {
+                const isActive = !['lapsed', 'cancelled', 'expired'].includes(String(pol.policy_status || '').toLowerCase());
+                const typeIcons = { 'Life': Heart, 'Health': Heart, 'Motor': Car, 'Home': Home, 'Travel': Plane };
+                const TypeIcon = typeIcons[pol.insurance_type] || Shield;
+                return (
+                  <div key={i} className={`p-4 border rounded-xl ${isActive ? 'bg-blue-50 border-blue-100' : 'bg-slate-50 border-slate-200 opacity-60'}`}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <TypeIcon className={`w-4 h-4 ${isActive ? 'text-blue-600' : 'text-slate-400'}`} />
+                      <span className="text-sm font-bold text-slate-900">{pol.insurance_type || 'Insurance'} Insurance</span>
+                      <span className={`ml-auto text-xs font-semibold px-2 py-0.5 rounded-full ${isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-600'}`}>{pol.policy_status || 'Unknown'}</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-xs">
+                      <div><p className="text-slate-400">Sum Insured</p><p className="font-bold text-slate-800">{fmtCur(pol.sum_insured || 0)}</p></div>
+                      <div><p className="text-slate-400">Premium</p><p className="font-bold text-slate-800">{fmtCur(pol.premium_amount || 0)}/yr</p></div>
+                      <div><p className="text-slate-400">Expiry</p><p className="font-bold text-slate-800">{pol.policy_end_date ? new Date(pol.policy_end_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</p></div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-center py-6 space-y-2">
+              <Shield className="w-8 h-8 text-slate-300 mx-auto" />
+              <p className="text-sm text-slate-400">No insurance policies on record</p>
+              {annualIncome > 600000 && <p className="text-xs text-amber-600 font-medium">⚠️ Insurance gap detected for high-income customer</p>}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // ── NBO Propensity Tab ────────────────────────────────────────────────────
+  const NboTab = () => (
+    <div className="space-y-4">
+      {/* Best Offer */}
+      {nbo.specific_product && (
+        <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl p-5 text-white">
+          <div className="flex items-center gap-2 mb-1">
+            <Sparkles className="w-4 h-4 text-yellow-300" />
+            <span className="text-xs font-semibold text-blue-100 uppercase tracking-wide">Top NBO Recommendation</span>
+          </div>
+          <p className="text-xl font-bold">{nbo.specific_product}</p>
+          <p className="text-sm text-blue-100 mt-0.5">Propensity: {nbo.propensity}</p>
+          {nbo.is_upgrade && <span className="mt-2 inline-flex items-center gap-1 text-xs font-semibold bg-white/20 px-2 py-0.5 rounded-full">⬆️ Upgrade Offer</span>}
+          {nbo.low_confidence && <p className="text-xs text-yellow-200 mt-2">⚠️ Low confidence — limited transaction history</p>}
+        </div>
+      )}
+
+      {/* All Propensity Scores */}
+      <div className="bg-white border border-slate-200 rounded-xl p-5">
+        <h3 className="text-xs font-semibold text-slate-500 mb-4 uppercase tracking-wide">All Banking Services — Propensity Ranking</h3>
+        {allScores.length > 0 ? (
+          <div className="space-y-3">
+            {allScores.slice(0, 12).map((item, i) => {
+              const score = item.nbo_score || 0;
+              const pct = Math.round(score * 100);
+              const barColor = pct >= 60 ? '#10B981' : pct >= 40 ? '#3B82F6' : pct >= 20 ? '#F59E0B' : '#94A3B8';
+              return (
+                <div key={i} className="space-y-1">
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-400 w-4 text-right">{i + 1}.</span>
+                      <span className="font-medium text-slate-800">{item.product_name || item.specific_product}</span>
+                      {item.is_upgrade && <span className="text-[10px] font-bold px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded-full">UPGRADE</span>}
+                    </div>
+                    <span className="font-bold" style={{ color: barColor }}>{pct}%</span>
+                  </div>
+                  <ScoreBar score={pct} color={barColor} />
+                  {item.fit_evidence?.length > 0 && (
+                    <p className="text-[10px] text-slate-400 pl-6">{item.fit_evidence[0]}</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="text-center py-8 space-y-2">
+            {loading ? <RefreshCw className="w-6 h-6 text-blue-400 mx-auto animate-spin" /> : <Target className="w-8 h-8 text-slate-300 mx-auto" />}
+            <p className="text-sm text-slate-400">{loading ? 'Computing propensity scores…' : 'No propensity data available'}</p>
+          </div>
+        )}
+      </div>
+
+      {/* NBO reasons */}
+      {nbo.reasons?.length > 0 && (
+        <div className="bg-white border border-slate-200 rounded-xl p-5">
+          <h3 className="text-xs font-semibold text-slate-500 mb-3 uppercase tracking-wide">Why This Offer</h3>
+          <ul className="space-y-2">
+            {nbo.reasons.map((r, i) => (
+              <li key={i} className="flex items-start gap-2 text-sm text-slate-700">
+                <CheckCircle2 className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
+                {r}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Draft Message Panel */}
+      <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-3">
+        <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Draft Personalised Message</h3>
+        <div className="flex gap-2">
+          {['email', 'sms'].map((ch) => (
+            <button key={ch} onClick={() => setDraftChannel(ch)}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg border cursor-pointer transition-colors ${draftChannel === ch ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'}`}>
+              {ch === 'email' ? '✉️ Email' : '💬 SMS'}
+            </button>
+          ))}
+          <button onClick={handleDraftMessage} disabled={isDraftingMsg}
+            className="ml-auto px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 text-white border border-blue-600 cursor-pointer hover:bg-blue-700 transition-colors disabled:opacity-60 flex items-center gap-1.5">
+            {isDraftingMsg ? <><RefreshCw className="w-3 h-3 animate-spin" /> Generating…</> : <><Sparkles className="w-3 h-3" /> Generate</>}
           </button>
         </div>
+        {draftError && <p className="text-xs text-red-500">{draftError}</p>}
+        {draftResult && (
+          <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg">
+            {draftResult.subject && <p className="text-xs font-bold text-slate-800 mb-1">📧 {draftResult.subject}</p>}
+            <p className="text-xs text-slate-700 leading-relaxed whitespace-pre-line">{draftResult.body || draftResult.message}</p>
+          </div>
+        )}
       </div>
+    </div>
+  );
 
-      {/* Hero Profile Card */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs relative overflow-hidden">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
-          <div className="lg:col-span-4 flex items-start space-x-4">
-            <div className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl bg-gradient-to-br from-blue-100 to-indigo-100 border-2 border-slate-200 flex items-center justify-center font-bold text-slate-700 text-2xl shrink-0 shadow-xs">
-              {displayInitials}
-            </div>
-            <div className="space-y-1">
-              <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">{displayName}</h2>
-              <span className="px-2 py-0.5 text-[11px] font-bold rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                {c360Banking.customer_segment_type || customer.customer_segment_type || 'Active'}
-              </span>
-              <p className="text-xs font-medium text-slate-600">{c360Employment.occupation || customer.employment_type || '—'}</p>
-              <div className="flex flex-col gap-1 text-xs text-slate-500 pt-1">
-                <span className="flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5 text-slate-400" />{c360Personal.city || customer.city || '—'}, {c360Personal.state || customer.state || ''}</span>
-                <span className="flex items-center gap-1.5"><Mail className="w-3.5 h-3.5 text-slate-400" />{c360Personal.email || customer.email || '—'}</span>
-                <span className="flex items-center gap-1.5"><Phone className="w-3.5 h-3.5 text-slate-400" />{c360Personal.phone_number || customer.phone_number || c360Personal.mobile_number || customer.mobile_number || '—'}</span>
-              </div>
-            </div>
-          </div>
+  const TAB_CONTENT = {
+    overview: <OverviewTab />,
+    spending: <SpendingTab />,
+    cards: <CardsTab />,
+    loans: <LoansTab />,
+    investments: <InvestmentsTab />,
+    insurance: <InsuranceTab />,
+    nbo: <NboTab />,
+  };
 
-          <div className="lg:col-span-8 grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 rounded-xl p-4 border border-slate-200/80">
-            <div className="space-y-1">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Segment</span>
-              <p className="text-xs sm:text-sm font-bold text-slate-800 truncate">{segments[0] || c360Banking.customer_segment_type || customer.customer_segment_type || 'Standard'}</p>
-              <span className="text-[10px] text-blue-600 font-medium">{c360Banking.risk_profile ? `Risk: ${c360Banking.risk_profile}` : 'AI-Clustered'}</span>
-            </div>
-            <div className="space-y-1">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Monthly Spend</span>
-              <p className="text-xs sm:text-sm font-bold text-slate-900">
-                ₹{Math.round(monthlySpend).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-              </p>
-              <span className="text-[10px] text-emerald-600 font-medium">{(savingsRate * 100).toFixed(1)}% savings rate</span>
-            </div>
-            <div className="space-y-1">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Credit Health</span>
-              <p className={`text-xs sm:text-sm font-bold ${creditScore >= 750 ? 'text-emerald-600' : creditScore >= 650 ? 'text-blue-600' : 'text-amber-600'}`}>
-                {c360Banking.credit_score || creditScore} CIBIL
-              </p>
-              <span className="text-[10px] text-slate-500">
-                {(c360Banking.credit_score||creditScore) >= 750 ? 'Tier 1 Prime' : (c360Banking.credit_score||creditScore) >= 650 ? 'Tier 2' : 'Tier 3'}
-              </span>
-            </div>
-            <div className="space-y-1">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Annual Income</span>
-              <p className="text-xs sm:text-sm font-bold text-slate-900">
-                ₹{((c360Employment.annual_income||annualIncome) / 100000).toFixed(1)}L
-              </p>
-              <span className="text-[10px] text-slate-500">{c360Employment.income_range || `Age: ${c360Personal.age || customer.age || '—'}`}</span>
-            </div>
-          </div>
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <button onClick={onBack} className="p-2 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer text-slate-500">
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 flex items-center justify-center text-white font-bold text-sm shrink-0">
+          {displayInitials}
         </div>
+        <div className="flex-1 min-w-0">
+          <h2 className="text-base font-bold text-slate-900 truncate">{displayName}</h2>
+          <p className="text-xs text-slate-500">{customerId} · {customer.city}</p>
+        </div>
+        {cluster.cluster_label && (
+          <span className="text-xs font-medium px-2.5 py-1 rounded-full text-white shrink-0" style={{ backgroundColor: cluster.cluster_color || '#3B82F6' }}>
+            {cluster.cluster_label}
+          </span>
+        )}
       </div>
 
-      {/* Loading state for AI pipeline */}
+      {/* Loading */}
       {loading && (
-        <div className="bg-gradient-to-br from-purple-900 via-indigo-900 to-slate-900 rounded-2xl p-8 text-white text-center space-y-4">
-          <div className="flex items-center justify-center gap-3">
-            <div className="w-6 h-6 border-2 border-purple-300/30 border-t-purple-300 rounded-full animate-spin" />
-            <Sparkles className="w-5 h-5 text-purple-300" />
-          </div>
-          <h3 className="text-lg font-bold">Prism is analysing {displayName}…</h3>
-          <p className="text-purple-200 text-sm">Running behavior engine, segmentation, financial analysis, NBO engine and GenAI personalization. This may take a few seconds.</p>
+        <div className="flex items-center justify-center gap-2 py-10 text-blue-600">
+          <RefreshCw className="w-5 h-5 animate-spin" />
+          <span className="text-sm font-medium">Loading 360° profile…</span>
         </div>
       )}
 
       {error && (
-        <div className="p-5 bg-red-50 border border-red-200 rounded-xl flex items-center gap-3 text-red-700">
-          <AlertTriangle className="w-5 h-5 shrink-0" />
-          <div>
-            <p className="text-sm font-semibold">AI Analysis Error</p>
-            <p className="text-xs text-red-600">{error}</p>
-          </div>
-          <button
-            onClick={() => {
-              setLoading(true);
-              analyzeCustomer(customerId).then(setAnalysis).catch((e) => setError(e.message)).finally(() => setLoading(false));
-            }}
-            className="ml-auto px-3 py-1.5 bg-red-600 text-white text-xs font-semibold rounded-lg cursor-pointer flex items-center gap-1.5"
-          >
-            <RefreshCw className="w-3.5 h-3.5" /> Retry
-          </button>
+        <div className="p-4 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2 text-red-700 text-sm">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          {error}
         </div>
       )}
 
-      {/* AI NBO Highlight (shown once analysis is ready) */}
-      {analysis && !loading && (
-        <div className="bg-gradient-to-br from-purple-900 via-indigo-900 to-slate-900 rounded-2xl p-6 text-white shadow-md relative overflow-hidden">
-          <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
-            <Sparkles className="w-48 h-48 text-white" />
-          </div>
-
-          <div className="relative z-10 grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
-            <div className="lg:col-span-5 space-y-3">
-              <div className="inline-flex items-center space-x-1.5 px-3 py-1 rounded-full bg-white/10 text-purple-200 border border-white/15 text-xs font-semibold">
-                <Sparkles className="w-3.5 h-3.5 text-purple-300" />
-                <span>AI Next Best Offer (NBO)</span>
-              </div>
-              <div>
-                <span className="text-xs text-purple-200 font-medium">Recommended Product</span>
-                <h3 className="text-2xl font-extrabold text-white flex items-center gap-2">
-                  <ProductIcon className="w-6 h-6 text-purple-300" />
-                  {recommendedProduct}
-                </h3>
-              </div>
-              <div className="bg-white/10 backdrop-blur-md rounded-xl p-4 border border-white/10 space-y-2">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="text-purple-200 font-medium">Propensity Score</span>
-                  <span className="text-emerald-300 font-extrabold text-base">{propensity}%</span>
-                </div>
-                <div className="w-full bg-black/30 rounded-full h-2.5 overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-emerald-400 to-teal-300 rounded-full transition-all duration-1000"
-                    style={{ width: `${propensity}%` }}
-                  />
-                </div>
-                <p className="text-[11px] text-purple-200">High conversion probability based on transaction telemetry.</p>
-              </div>
-            </div>
-
-            <div className="lg:col-span-7 bg-white/10 backdrop-blur-md rounded-xl p-5 border border-white/15 space-y-3">
-              <h4 className="text-sm font-bold text-white flex items-center gap-2">
-                <Zap className="w-4 h-4 text-amber-400" />
-                Why this product was recommended
-              </h4>
-              <p className="text-xs text-purple-100 leading-relaxed line-clamp-4">{whyRecommended}</p>
-              <div className="pt-2 flex flex-wrap items-center justify-between gap-3 border-t border-white/10">
-                <span className="text-[11px] text-purple-200">
-                  Model: <strong>Prism Propensity Engine v2.4</strong>
-                </span>
-                <button
-                  onClick={handleCreateOffer}
-                  className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-900 font-bold text-xs rounded-lg transition-colors cursor-pointer shadow-sm"
-                >
-                  Dispatch Instant Offer
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-
-      {/* ── HOLDINGS PORTFOLIO PANEL ─────────────────────────────────────── */}
-      {analysis && !loading && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-          <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center">
-              <Briefcase className="w-4 h-4 text-blue-600" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-slate-900">Customer 360 — Product Holdings</h3>
-              <p className="text-xs text-slate-400">All active products owned by this customer</p>
-            </div>
-          </div>
-          <div className="p-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-
-            {/* Accounts */}
-            {(c360Holdings.accounts?.length > 0) && (
-              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-2">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Accounts ({c360Holdings.accounts.length})</p>
-                {c360Holdings.accounts.map((a, i) => (
-                  <div key={i} className="flex justify-between text-xs">
-                    <span className="font-semibold text-slate-700">{a.account_type}</span>
-                    <span className="text-slate-500 font-mono">₹{Number(a.average_monthly_balance||0).toLocaleString('en-IN', {maximumFractionDigits:0})}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Credit Cards */}
-            {(c360Holdings.credit_cards?.length > 0) && (
-              <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 space-y-2">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-blue-600">Credit Cards ({c360Holdings.credit_cards.length})</p>
-                {c360Holdings.credit_cards.map((cc, i) => (
-                  <div key={i} className="flex justify-between text-xs">
-                    <span className="font-semibold text-slate-800">{cc.card_name}</span>
-                    <span className="text-blue-700 font-mono">₹{Number(cc.credit_limit||0).toLocaleString('en-IN', {maximumFractionDigits:0})}</span>
-                  </div>
-                ))}
-                <p className="text-[11px] text-blue-600 font-medium">Total Limit: ₹{Number(holdings.total_credit_limit||0).toLocaleString('en-IN', {maximumFractionDigits:0})}</p>
-              </div>
-            )}
-
-            {/* Loans */}
-            {(c360Holdings.loans?.length > 0) && (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-2">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-amber-700">Active Loans ({c360Holdings.loans.length})</p>
-                {c360Holdings.loans.map((l, i) => (
-                  <div key={i} className="flex justify-between text-xs">
-                    <span className="font-semibold text-slate-800">{l.loan_category}</span>
-                    <span className="text-amber-700 font-mono">EMI ₹{Number(l.emi_amount||0).toLocaleString('en-IN', {maximumFractionDigits:0})}</span>
-                  </div>
-                ))}
-                <p className="text-[11px] text-amber-700 font-medium">Total Outstanding: ₹{Number(holdings.total_outstanding_debt||0).toLocaleString('en-IN', {maximumFractionDigits:0})}</p>
-              </div>
-            )}
-
-            {/* Investments */}
-            {(c360Holdings.investments?.length > 0) && (
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 space-y-2">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">Investments ({c360Holdings.investments.length})</p>
-                {c360Holdings.investments.slice(0, 4).map((inv, i) => (
-                  <div key={i} className="flex justify-between text-xs">
-                    <span className="font-semibold text-slate-800">{inv.investment_category}</span>
-                    <span className="text-emerald-700 font-mono">₹{Number(inv.current_value||0).toLocaleString('en-IN', {maximumFractionDigits:0})}</span>
-                  </div>
-                ))}
-                {c360Holdings.investments.length > 4 && <p className="text-[11px] text-emerald-600">+{c360Holdings.investments.length - 4} more</p>}
-                <p className="text-[11px] text-emerald-700 font-medium">Total Value: ₹{Number(holdings.total_assets_value||0).toLocaleString('en-IN', {maximumFractionDigits:0})}</p>
-              </div>
-            )}
-
-            {/* Deposits */}
-            {(c360Holdings.deposits?.length > 0) && (
-              <div className="rounded-xl border border-purple-200 bg-purple-50 p-4 space-y-2">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-purple-700">Deposits ({c360Holdings.deposits.length})</p>
-                {c360Holdings.deposits.map((d, i) => (
-                  <div key={i} className="flex justify-between text-xs">
-                    <span className="font-semibold text-slate-800">{d.deposit_type}</span>
-                    <span className="text-purple-700 font-mono">₹{Number(d.principal_amount||0).toLocaleString('en-IN', {maximumFractionDigits:0})}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Insurance */}
-            {(c360Holdings.insurance?.length > 0) && (
-              <div className="rounded-xl border border-rose-200 bg-rose-50 p-4 space-y-2">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-rose-700">Insurance ({c360Holdings.insurance.length})</p>
-                {c360Holdings.insurance.map((ins, i) => (
-                  <div key={i} className="flex justify-between text-xs">
-                    <span className="font-semibold text-slate-800">{ins.insurance_type || ins.insurance_category}</span>
-                    <span className="text-rose-700 font-mono">₹{Number(ins.sum_insured||0).toLocaleString('en-IN', {maximumFractionDigits:0})}</span>
-                  </div>
-                ))}
-                <p className="text-[11px] text-rose-700 font-medium">Total Cover: ₹{Number(holdings.total_insurance_cover||0).toLocaleString('en-IN', {maximumFractionDigits:0})}</p>
-              </div>
-            )}
-
-            {/* Net Worth Summary */}
-            <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-slate-900 to-slate-800 p-4 space-y-2 text-white col-span-1">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Financial Summary</p>
-              <div className="flex justify-between text-xs">
-                <span className="text-slate-300">Total Assets</span>
-                <span className="text-emerald-400 font-bold">₹{Number(holdings.total_assets_value||0).toLocaleString('en-IN', {maximumFractionDigits:0})}</span>
-              </div>
-              <div className="flex justify-between text-xs">
-                <span className="text-slate-300">Total Debt</span>
-                <span className="text-rose-400 font-bold">₹{Number(holdings.total_outstanding_debt||0).toLocaleString('en-IN', {maximumFractionDigits:0})}</span>
-              </div>
-              <div className="border-t border-slate-700 mt-2 pt-2 flex justify-between text-xs">
-                <span className="text-slate-300 font-semibold">Net Worth</span>
-                <span className={`font-extrabold ${(holdings.net_worth_indicator||0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                  ₹{Number(holdings.net_worth_indicator||0).toLocaleString('en-IN', {maximumFractionDigits:0})}
-                </span>
-              </div>
-              <div className="flex justify-between text-xs">
-                <span className="text-slate-300">Monthly EMI</span>
-                <span className="text-amber-400 font-bold">₹{Number(holdings.total_emi_monthly||0).toLocaleString('en-IN', {maximumFractionDigits:0})}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 2-Column: Behavioral Patterns + Transactions */}
-      {analysis && !loading && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Left: Behavior Patterns + GenAI Message */}
-          <div className="lg:col-span-5 space-y-6">
-            <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs space-y-4">
-              <div className="flex items-center space-x-2 pb-3 border-b border-slate-100">
-                <Activity className="w-4 h-4 text-blue-600" />
-                <h3 className="text-sm font-bold text-slate-900">Observed Behaviour Patterns</h3>
-              </div>
-              <div className="space-y-2.5">
-                {behaviourPatterns.map((pattern, index) => (
-                  <div key={index} className="flex items-start space-x-2.5 p-3 rounded-lg bg-slate-50 border border-slate-100 text-xs text-slate-700">
-                    <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-                    <span className="leading-snug">{pattern}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {genaiMsg && (
-              <div className="bg-gradient-to-br from-purple-50 via-white to-blue-50/60 rounded-xl border border-purple-200 p-5 shadow-xs space-y-3">
-                <div className="flex items-center space-x-2 text-purple-700 font-bold text-xs uppercase tracking-wider">
-                  <Sparkles className="w-4 h-4 text-purple-600" />
-                  <span>AI Marketing Message Preview</span>
-                </div>
-                <p className="text-xs text-slate-800 leading-relaxed whitespace-pre-line line-clamp-6">{genaiMsg}</p>
-              </div>
-            )}
-          </div>
-
-          {/* Right: Transactions */}
-          <div className="lg:col-span-7 bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden flex flex-col justify-between">
-            <div>
-              <div className="p-5 border-b border-slate-100 flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900">Recent Account Transactions</h3>
-                  <p className="text-xs text-slate-500">Live feed analyzed for propensity scoring</p>
-                </div>
-                <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 px-2 py-1 rounded">
-                  From behavior engine
-                </span>
-              </div>
-
-              {recentTransactions.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                      <tr>
-                        <th className="px-4 py-3">Date</th>
-                        <th className="px-4 py-3">Description</th>
-                        <th className="px-4 py-3">Category</th>
-                        <th className="px-4 py-3 text-right">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {recentTransactions.map((tx, i) => (
-                        <tr key={i} className="hover:bg-slate-50/80 transition-colors">
-                          <td className="px-4 py-3 whitespace-nowrap text-slate-500 font-medium">{tx.date || tx.transaction_date || '—'}</td>
-                          <td className="px-4 py-3 whitespace-nowrap font-bold text-slate-900">{tx.description || tx.merchant || '—'}</td>
-                          <td className="px-4 py-3 whitespace-nowrap">
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-700">{tx.category || '—'}</span>
-                          </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-right font-bold">
-                            <span className={tx.type === 'credit' || tx.transaction_type === 'credit' ? 'text-emerald-600' : 'text-slate-900'}>
-                              {(tx.type === 'credit' || tx.transaction_type === 'credit') ? '+' : '-'}
-                              ₹{Number(tx.amount || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <div className="p-8 text-center">
-                  <p className="text-xs text-slate-400">Transaction data from behavior engine not available.</p>
-                  <p className="text-xs text-slate-400 mt-1">Category spending breakdown available above.</p>
-                </div>
-              )}
-            </div>
-
-            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-xs">
-              <span className="text-slate-500">Live telemetry from behavior engine</span>
-              <button
-                onClick={handleCreateOffer}
-                className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg text-xs transition-colors cursor-pointer"
-              >
-                <Send className="w-3.5 h-3.5" />
-                <span>Create Offer for {displayName.split(' ')[0]}</span>
+      {!loading && !error && (
+        <>
+          {/* Tab nav */}
+          <div className="flex gap-1 bg-slate-100 rounded-xl p-1 overflow-x-auto scrollbar-hide">
+            {TABS.map(({ id, label, icon: Icon }) => (
+              <button key={id} onClick={() => setActiveTab(id)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap cursor-pointer transition-all ${activeTab === id ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                <Icon className="w-3.5 h-3.5" />
+                {label}
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── PERSONALISED MESSAGE DRAFT PANEL ─────────────────────────────────── */}
-      {analysis && !loading && (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-          <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center shadow-sm">
-                <Sparkles className="w-4 h-4 text-white" />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">Draft Personalised Message</h3>
-                <p className="text-xs text-slate-500">Groq AI drafts a message tuned to {displayName}'s age & profile</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => handleDraftMessage('email')}
-                disabled={isDraftingMsg}
-                className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                  draftChannel === 'email' && draftResult
-                    ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                    : 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'
-                } disabled:opacity-60`}
-              >
-                <Mail className="w-3.5 h-3.5" />
-                {isDraftingMsg && draftChannel === 'email' ? (
-                  <span className="flex items-center gap-1"><RefreshCw className="w-3 h-3 animate-spin" /> Drafting…</span>
-                ) : '📧 Draft Email'}
-              </button>
-              <button
-                onClick={() => handleDraftMessage('sms')}
-                disabled={isDraftingMsg}
-                className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
-                  draftChannel === 'sms' && draftResult
-                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
-                    : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-                } disabled:opacity-60`}
-              >
-                <MessageSquare className="w-3.5 h-3.5" />
-                {isDraftingMsg && draftChannel === 'sms' ? (
-                  <span className="flex items-center gap-1"><RefreshCw className="w-3 h-3 animate-spin" /> Drafting…</span>
-                ) : '📱 Draft SMS'}
-              </button>
-            </div>
+            ))}
           </div>
 
-          <div className="p-5 space-y-4">
-            {draftError && (
-              <div className="p-3 bg-red-50 text-red-700 text-xs font-semibold rounded-lg border border-red-200 flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 shrink-0" />{draftError}
-              </div>
-            )}
-
-            {isDraftingMsg && (
-              <div className="flex flex-col items-center justify-center py-8 space-y-3">
-                <div className="flex space-x-2">
-                  <div className="w-2.5 h-2.5 bg-purple-600 rounded-full animate-bounce [animation-delay:-0.3s]" />
-                  <div className="w-2.5 h-2.5 bg-purple-600 rounded-full animate-bounce [animation-delay:-0.15s]" />
-                  <div className="w-2.5 h-2.5 bg-purple-600 rounded-full animate-bounce" />
-                </div>
-                <p className="text-sm font-bold text-purple-700">Groq AI is crafting a personalised {draftChannel} for {displayName.split(' ')[0]}…</p>
-                <p className="text-xs text-slate-500">Analyzing age profile, portfolio gaps, and behavioral triggers</p>
-              </div>
-            )}
-
-            {draftResult && !isDraftingMsg && (
-              <div className="space-y-4 animate-in fade-in duration-500">
-                {/* Strategy badge */}
-                <div className="flex flex-wrap items-center gap-2">
-                  {(() => {
-                    const ageColors = {
-                      genz: 'bg-pink-50 text-pink-700 border-pink-200',
-                      millennial: 'bg-purple-50 text-purple-700 border-purple-200',
-                      genx: 'bg-blue-50 text-blue-700 border-blue-200',
-                      boomer: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-                    };
-                    const ageLabel = { genz: 'Gen Z', millennial: 'Millennial', genx: 'Gen X', boomer: 'Boomer' };
-                    return (
-                      <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${ageColors[draftResult.age_group] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
-                        {ageLabel[draftResult.age_group] || draftResult.age_group} • {draftResult.age}y
-                      </span>
-                    );
-                  })()}
-                  <span className="text-xs text-slate-500 italic">{draftResult.strategy_used}</span>
-                </div>
-
-                {/* Subject / Header */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wider">{draftChannel === 'email' ? 'Subject Line' : 'SMS Header'}</label>
-                  <input
-                    type="text"
-                    value={draftSubject}
-                    onChange={(e) => setDraftSubject(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all"
-                  />
-                </div>
-
-                {/* Body */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5 uppercase tracking-wider">{draftChannel === 'email' ? 'Email Body' : 'SMS Text'}</label>
-                  <textarea
-                    rows={draftChannel === 'email' ? 8 : 4}
-                    value={draftBody}
-                    onChange={(e) => setDraftBody(e.target.value)}
-                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 leading-relaxed focus:outline-none focus:ring-2 focus:ring-purple-500 transition-all resize-y font-serif"
-                  />
-                  {draftChannel === 'sms' && (
-                    <p className={`text-[11px] mt-1 font-medium ${draftBody.length > 160 ? 'text-amber-600' : 'text-slate-400'}`}>
-                      {draftBody.length} / 160 characters {draftBody.length > 160 && '— will send as multi-part SMS'}
-                    </p>
-                  )}
-                </div>
-
-                {isSent ? (
-                  <div className="flex items-center gap-2 p-3 bg-emerald-50 text-emerald-700 text-xs font-bold border border-emerald-200 rounded-xl">
-                    <CheckCircle2 className="w-4 h-4 shrink-0" />
-                    {draftChannel === 'email' ? 'Email' : 'SMS'} sent to {displayName} successfully! Offer recorded.
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-xs text-slate-400 italic">Review and edit the draft above before sending.</p>
-                    <button
-                      onClick={handleCreateOffer}
-                      disabled={isSendingOffer}
-                      className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all cursor-pointer disabled:opacity-70"
-                    >
-                      {isSendingOffer ? (
-                        <><div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" /><span>Sending…</span></>
-                      ) : (
-                        <><Send className="w-3.5 h-3.5" /><span>Send {draftChannel === 'email' ? 'Email' : 'SMS'} to {displayName.split(' ')[0]}</span></>
-                      )}
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {!draftResult && !isDraftingMsg && !draftError && (
-              <div className="flex flex-col items-center justify-center py-10 text-center space-y-2">
-                <div className="w-12 h-12 rounded-full bg-purple-50 border border-purple-100 flex items-center justify-center">
-                  <Sparkles className="w-6 h-6 text-purple-400" />
-                </div>
-                <p className="text-sm font-semibold text-slate-500">Click "Draft Email" or "Draft SMS" to generate a personalised message for {displayName.split(' ')[0]}</p>
-                <p className="text-xs text-slate-400">Groq AI will tailor the message to their age, portfolio, city and financial profile</p>
-              </div>
-            )}
-          </div>
-        </div>
+          {/* Tab content */}
+          <div>{TAB_CONTENT[activeTab]}</div>
+        </>
       )}
 
       <OfferSuccessModal
         isOpen={isOfferModalOpen}
         onClose={() => setIsOfferModalOpen(false)}
-        customer={{ name: displayName, recommendedProduct, propensity }}
-        onNavigateCampaigns={onNavigateCampaigns}
+        customerName={displayName}
+        product={nbo?.specific_product}
+        channel={draftChannel}
       />
     </div>
   );
 }
-
