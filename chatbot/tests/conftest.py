@@ -7,11 +7,24 @@ local mode are paid once for the whole run.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
 import pandas as pd
 import pytest
+
+# Default the whole test session to LOCAL Qdrant so the suite never
+# depends on live cloud infrastructure or the credentials in
+# chatbot/.env.  ``from_env()`` loads chatbot/.env with override=False,
+# so pre-setting these (even empty) wins.  Set CHATBOT_TESTS_ALLOW_CLOUD=1
+# to run the integration tests against the cluster configured in
+# chatbot/.env instead.
+if os.environ.get("CHATBOT_TESTS_ALLOW_CLOUD") != "1":
+    os.environ.setdefault("QDRANT_URL", "")
+    os.environ.setdefault("QDRANT_API_KEY", "")
+    # setdefault: an explicitly exported empty/unset value stays; a value
+    # exported by the runner is respected only when cloud is allowed above.
 
 # Repo root on sys.path so `chatbot.` imports resolve when pytest runs
 # from any directory.
