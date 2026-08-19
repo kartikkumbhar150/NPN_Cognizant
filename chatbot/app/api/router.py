@@ -16,6 +16,7 @@ from fastapi import APIRouter, HTTPException
 
 from chatbot.app.models.chat_models import (
     ChatRequest,
+    ChatEmailRequest,
     ChatResponse,
 )
 from chatbot.app.services.customer_context import CustomerNotFoundError
@@ -76,6 +77,60 @@ async def chat(request: ChatRequest) -> ChatResponse:
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
         logger.exception("Unexpected error processing chat turn")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    elapsed_ms = int((time.monotonic() - start) * 1000)
+
+    response = map_turn_result(turn_result)
+    return response
+
+
+@router.post("/chat/email", response_model=ChatResponse)
+async def chat_by_email(request: ChatEmailRequest) -> ChatResponse:
+    """Process a chat message using the customer's email address.
+
+    Identical to /chat, but resolves the customer_id using their email.
+    """
+    start = time.monotonic()
+
+    from chatbot.app.services.dependencies import get_stack
+
+    stack = get_stack()
+    orchestrator = stack.orchestrator
+
+    if orchestrator is None:
+        raise HTTPException(status_code=503, detail="Chatbot orchestrator not initialized")
+
+    if stack.email_lookup is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Email lookup service not available (customer data not loaded)",
+        )
+
+    from chatbot.app.services.customer_context import EmailNotFoundError
+    try:
+        resolved_customer_id = stack.email_lookup.resolve(request.email)
+        logger.info(
+            "Email %s resolved to customer_id=%s",
+            request.email,
+            resolved_customer_id,
+        )
+    except EmailNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+    try:
+        turn_result = await orchestrator.handle_turn(
+            message=request.message,
+            customer_id=resolved_customer_id,
+            session_id=str(request.conversation_id) if request.conversation_id else None,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        from chatbot.app.services.customer_context import CustomerNotFoundError
+        if isinstance(exc, CustomerNotFoundError):
+            raise HTTPException(status_code=404, detail=str(exc))
+        logger.exception("Unexpected error processing email chat turn")
         raise HTTPException(status_code=500, detail="Internal server error")
 
     elapsed_ms = int((time.monotonic() - start) * 1000)

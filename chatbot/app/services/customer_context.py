@@ -33,6 +33,10 @@ class PhoneNotFoundError(CustomerContextError):
     """No customer found for the given phone/mobile number."""
 
 
+class EmailNotFoundError(CustomerContextError):
+    """No customer found for the given email address."""
+
+
 def _normalise_phone(phone: str) -> str:
     """Strip country code and non-digits, return last 10 digits."""
     digits = re.sub(r"\D", "", phone)
@@ -67,6 +71,36 @@ class CustomerPhoneLookup:
         if not customer_id:
             raise PhoneNotFoundError(
                 f"No customer found for phone number ending in {normalised[-4:]}"
+            )
+        return customer_id
+
+
+class CustomerEmailLookup:
+    """Resolves an email address to a customer_id.
+
+    Checks ``email`` column in *customers_df*.
+    """
+
+    def __init__(self, customers_df: pd.DataFrame) -> None:
+        if customers_df is None or "customer_id" not in customers_df.columns:
+            raise CustomerContextError("customers_df must have 'customer_id' column")
+        self._df = customers_df
+        if "email" in customers_df.columns:
+            self._email_index: Dict[str, str] = {
+                str(row["email"]).strip().lower(): str(row["customer_id"])
+                for _, row in customers_df.iterrows()
+                if row.get("email") and not pd.isna(row.get("email"))
+            }
+        else:
+            self._email_index = {}
+
+    def resolve(self, email: str) -> str:
+        """Return the customer_id for *email*, or raise EmailNotFoundError."""
+        normalised = str(email).strip().lower()
+        customer_id = self._email_index.get(normalised)
+        if not customer_id:
+            raise EmailNotFoundError(
+                f"No customer found for email {normalised}"
             )
         return customer_id
 

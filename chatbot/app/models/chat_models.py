@@ -78,6 +78,27 @@ class ChatRequest(BaseModel):
         return stripped
 
 
+class ChatEmailRequest(BaseModel):
+    """Inbound chat message identifying user by email instead of phone number."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    message: str = Field(min_length=1, max_length=MAX_MESSAGE_LENGTH)
+    conversation_id: Optional[UUID] = None
+    email: str = Field(
+        description="Customer email address. Resolves to a customer_id automatically."
+    )
+
+    @field_validator("message")
+    @classmethod
+    def _reject_blank_message(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("message must not be empty or whitespace-only")
+        return stripped
+
+
+
 class ChatSource(BaseModel):
     """Provenance reference for retrieved knowledge."""
 

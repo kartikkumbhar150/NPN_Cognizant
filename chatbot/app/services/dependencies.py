@@ -48,6 +48,7 @@ class ChatbotStack:
         # Services
         self.context_builder = None    # CustomerContextBuilder
         self.phone_lookup = None       # CustomerPhoneLookup
+        self.email_lookup = None       # CustomerEmailLookup
         self.nbo_adapter = None        # NBOAdapter
         self.groq_service = None       # GroqAnswerService
         self.recommendation_orchestrator = None  # RecommendationOrchestrator
@@ -137,11 +138,13 @@ class ChatbotStack:
             except Exception as exc:
                 logger.warning("Customer context builder init failed: %s", exc)
             try:
-                from chatbot.app.services.customer_context import CustomerPhoneLookup
+                from chatbot.app.services.customer_context import CustomerPhoneLookup, CustomerEmailLookup
                 self.phone_lookup = CustomerPhoneLookup(customers_df=self.customers_df)
                 logger.info("Phone lookup index built: %d entries", len(self.phone_lookup._phone_index))
+                self.email_lookup = CustomerEmailLookup(customers_df=self.customers_df)
+                logger.info("Email lookup index built: %d entries", len(self.email_lookup._email_index))
             except Exception as exc:
-                logger.warning("Phone lookup init failed: %s", exc)
+                logger.warning("Lookup init failed: %s", exc)
 
         # NBO adapter
         if self.engines and self.engines.get("nbo_engine"):
