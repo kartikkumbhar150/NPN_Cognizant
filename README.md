@@ -1,4 +1,57 @@
-# NPN Bank GenAI Hyper-Personalized Banking Marketing Platform
+# NPN Bank — GenAI Hyper-Personalized Banking Marketing Platform
+
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688.svg?style=flat&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
+[![React](https://img.shields.io/badge/React-19.0-61DAFB.svg?style=flat&logo=react&logoColor=black)](https://react.dev)
+[![Python](https://img.shields.io/badge/Python-3.10+-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org)
+[![Redis](https://img.shields.io/badge/Redis-Cache%20%26%20Events-DC382D.svg?style=flat&logo=redis&logoColor=white)](https://redis.io)
+[![Supabase](https://img.shields.io/badge/Database-Supabase%20%2F%20PostgreSQL-3ECF8E.svg?style=flat&logo=supabase&logoColor=white)](https://supabase.com)
+[![Groq](https://img.shields.io/badge/GenAI-Groq%20LLM%20(Llama%203)-F55036.svg?style=flat)](https://groq.com)
+[![Vite](https://img.shields.io/badge/Vite-6.2-646CFF.svg?style=flat&logo=vite&logoColor=white)](https://vitejs.dev)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+An enterprise-grade, AI-driven banking intelligence and hyper-personalized marketing platform. Built for **NPN Bank (Cognizant Project)**, this solution shifts banking outreach from generic broadcast marketing to **context-aware, real-time, financial gap-driven recommendations** backed by deterministic explainability, marketing guardrails, and Groq-powered generative marketing copy.
+
+---
+
+## Table of Contents
+
+- [1. Executive Summary & Problem Statement](#1-executive-summary--problem-statement)
+- [2. System Architecture](#2-system-architecture)
+- [3. Key Platform Capabilities](#3-key-platform-capabilities)
+  - [3.1 Customer 360° Intelligence](#31-customer-360-intelligence)
+  - [3.2 Financial Gap Detection & Health Scoring](#32-financial-gap-detection--health-scoring)
+  - [3.3 Real-Time Event Engine](#33-real-time-event-engine)
+  - [3.4 Next Best Offer (NBO) & Eligibility Decisioning](#34-next-best-offer-nbo--eligibility-decisioning)
+  - [3.5 Marketing Guard & Consent Safety Gate](#35-marketing-guard--consent-safety-gate)
+  - [3.6 Context-Aware GenAI Copywriting](#36-context-aware-genai-copywriting)
+  - [3.7 Closed-Loop Campaign Studio & Analytics](#37-closed-loop-campaign-studio--analytics)
+  - [3.8 Banking Chatbot & Semantic Search (RAG)](#38-banking-chatbot--semantic-search-rag)
+- [4. Backend & Redis Architecture](#4-backend--redis-architecture)
+  - [4.1 Backend Service Design](#41-backend-service-design)
+  - [4.2 Redis Caching & Event Layer](#42-redis-caching--event-layer)
+- [5. Project Directory Structure](#5-project-directory-structure)
+- [6. End-to-End AI Engine Pipeline](#6-end-to-end-ai-engine-pipeline)
+- [7. API Reference](#7-api-reference)
+- [8. Technology Stack](#8-technology-stack)
+- [9. Setup & Installation Guide](#9-setup--installation-guide)
+  - [9.1 Prerequisites](#91-prerequisites)
+  - [9.2 Environment Configuration](#92-environment-configuration)
+  - [9.3 Backend Setup](#93-backend-setup)
+  - [9.4 Frontend Setup](#94-frontend-setup)
+  - [9.5 Chatbot Setup](#95-chatbot-setup)
+- [10. Running the Platform](#10-running-the-platform)
+- [11. Testing & Verification](#11-testing--verification)
+- [12. Contributing & Pull Request Guidelines](#12-contributing--pull-request-guidelines)
+
+---
+
+## 1. Executive Summary & Problem Statement
+
+Traditional retail banking marketing relies on broad demographic segments, static propensity tables, and unsolicited outbound messages. This leads to **customer fatigue, high opt-out rates, and low conversion**.
+
+**The NPN Bank Solution:**
+A real-time financial intelligence platform answering one fundamental question:
+> *"Given what this customer is doing financially right now, what banking product is genuinely most relevant to them, why are they eligible, and how should the bank communicate it safely and persuasively?"*
 
 ## 1. Executive Summary
 
@@ -48,56 +101,41 @@ The platform answers this through a layered architecture:
 
 ```mermaid
 graph TD
-    subgraph Users[Users and Channels]
-        Employee[Bank Employee]
-        Customer[Customer or Chat User]
+    subgraph Client Layer ["Frontend & Client Layer"]
+        UI["React 19 Dashboard (Vite + Tailwind)"]
+        CB["Banking Chatbot Interface"]
     end
 
-    subgraph Frontend[Presentation Layer]
-        Dashboard[React Employee Dashboard]
-        ChatClient[Chat Client or API Consumer]
+    subgraph API Gateway ["API Gateway & Auth"]
+        FastAPI["FastAPI REST Server (:8000)"]
+        JWT["OAuth2 / JWT Authentication"]
+        CORS["CORS & Request Middleware"]
     end
 
-    subgraph APIs[API Layer]
-        BackendAPI[Python FastAPI Employee Backend]
-        ChatbotAPI[Standalone Chatbot FastAPI Service]
+    subgraph Caching Layer ["Redis High-Speed Layer"]
+        R_C360["Customer 360 Aggregate Cache"]
+        R_SESS["Session & Token Blocklist"]
+        R_THROT["Campaign Throttling & Cooldowns"]
+        R_PUBSUB["Pub/Sub Event Bus"]
     end
 
-    subgraph Security[Access and Request Controls]
-        Auth[Employee Login and JWT]
-        CORS[CORS Middleware]
-        TrustedContext[Trusted Customer Identifier Context]
+    subgraph AI Pipeline ["Banking AI Intelligence Pipeline (v2.0 / v3.0)"]
+        FE["Feature Engine (Rolling Windows)"]
+        BE["Behavior Engine (Spending Trajectory)"]
+        EE["Event Engine (Triggers & Thresholds)"]
+        FA["Financial Analyst (Gap Detection & Health Score)"]
+        EL["Eligibility Engine (Hard Constraints)"]
+        PF["Product Fit Engine (Relevance Scoring)"]
+        NBO["Next Best Offer Engine (Ensemble Ranker)"]
+        EXP["Explainability Engine (Audit Reasons)"]
+        MG["Marketing Guard (Consent & Fatigue Gate)"]
+        GENAI["GenAI Service (Groq LLM / Time & Cohort Aware)"]
     end
 
-    subgraph Intelligence[AI Decisioning Layer]
-        DataLoader[Data Loader]
-        FeatureEngine[Feature Engine]
-        BehaviorEngine[Behavior Engine]
-        EventEngine[Event Engine]
-        FinancialAnalyst[Financial Analyst]
-        Segmentation[Segmentation and Clustering]
-        Eligibility[Eligibility Engine]
-        ProductFit[Product Fit Engine]
-        NBO[Next Best Offer Engine]
-        Explainability[Explainability Engine]
-        MarketingGuard[Marketing Guard]
-        GenAI[GenAI Service]
-    end
-
-    subgraph Chatbot[Chatbot Intelligence Layer]
-        IntentRouter[Intent Router]
-        Conversation[Conversation Store]
-        Retriever[Knowledge Retriever]
-        ResponseMapper[Response Mapper]
-        RecommendationService[Recommendation Service]
-    end
-
-    subgraph Storage[Storage and Knowledge Layer]
-        CSV[Local CSV Banking Data]
-        Supabase[Supabase or PostgreSQL]
-        Qdrant[Qdrant Vector Store]
-        MarkdownKnowledge[Curated Markdown Knowledge]
-        Config[YAML Configuration]
+    subgraph Data Layer ["Persistent Storage & Vector Store"]
+        PG["Supabase / PostgreSQL Database"]
+        CSV["Synthetic Banking Datasets (CSV)"]
+        QD["Qdrant Vector DB (Chatbot Knowledge)"]
     end
 
     Employee --> Dashboard
@@ -912,15 +950,7 @@ Generated caches, dependency directories, virtual environments, Python bytecode 
 
 This repository includes README documentation for:
 
-- Project root.
-- Python backend and AI engine directories.
-- AI engine configuration.
-- Database CSV assets and generated customer 360 outputs.
-- Database generation scripts.
-- Operational Python scripts.
-- Chatbot root, app package, API routes, integrations, models, RAG, services, knowledge, corpus, scripts, and tests.
-- Frontend root, public assets, source tree, components, contexts, pages, and services.
-- Isolated test scratch area.
+##  Project Team & Acknowledgments
 
 ## 24. Summary
 
