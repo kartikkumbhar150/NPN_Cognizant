@@ -1,15 +1,16 @@
 """FastAPI router for the chatbot service (port 8001).
 
 Endpoints:
-- ``POST /chat`` — primary conversational endpoint
-- ``GET /health`` — liveness/readiness check
+- ``POST /chat``  — full response (intent, sources, recommendations, etc.)
+- ``POST /ask``   — simple response: just {answer, conversation_id}
+- ``GET  /health`` — liveness/readiness check
 """
 
 from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException
 
@@ -30,6 +31,8 @@ async def chat(request: ChatRequest) -> ChatResponse:
     """Process a chat message and return a response.
 
     Accepts a single-turn message with optional customer context.
+    You can identify the customer either by ``customer_id`` or by
+    ``phone_number`` (the service resolves it automatically).
     Multi-turn conversation is tracked server-side via conversation_id.
     """
     start = time.monotonic()
@@ -42,10 +45,29 @@ async def chat(request: ChatRequest) -> ChatResponse:
     if orchestrator is None:
         raise HTTPException(status_code=503, detail="Chatbot orchestrator not initialized")
 
+    # ── Resolve phone_number → customer_id ───────────────────────────────────
+    resolved_customer_id = request.customer_id
+    if request.phone_number and not resolved_customer_id:
+        if stack.phone_lookup is None:
+            raise HTTPException(
+                status_code=503,
+                detail="Phone lookup service not available (customer data not loaded)",
+            )
+        from chatbot.app.services.customer_context import PhoneNotFoundError
+        try:
+            resolved_customer_id = stack.phone_lookup.resolve(request.phone_number)
+            logger.info(
+                "Phone %s resolved to customer_id=%s",
+                request.phone_number[-4:],  # log only last 4 digits for privacy
+                resolved_customer_id,
+            )
+        except PhoneNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+
     try:
         turn_result = await orchestrator.handle_turn(
             message=request.message,
-            customer_id=request.customer_id,
+            customer_id=resolved_customer_id,
             session_id=str(request.conversation_id) if request.conversation_id else None,
         )
     except ValueError as exc:
@@ -60,6 +82,26 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
     response = map_turn_result(turn_result)
     return response
+
+
+# ── /ask — simple endpoint, returns only the answer text ────────────────────
+
+class AskRequest(ChatRequest):
+    """Same as ChatRequest — alias for clarity."""
+
+
+@router.post("/ask")
+async def ask(request: AskRequest) -> Dict[str, str]:
+    """Lightweight chat endpoint.
+
+    Identical to POST /chat internally, but returns ONLY::
+
+        {"answer": "...", "conversation_id": "..."}
+
+    Use this when you don't need sources, recommendations, or intent metadata.
+    """
+    full = await chat(request)
+    return {"answer": full.answer, "conversation_id": full.conversation_id}
 
 
 @router.get("/health")

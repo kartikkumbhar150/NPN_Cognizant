@@ -7,9 +7,10 @@ customer_data)``.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
@@ -27,6 +28,47 @@ class CustomerContextError(Exception):
 class CustomerNotFoundError(CustomerContextError):
     """The customer ID does not exist in the customers catalogue."""
 
+
+class PhoneNotFoundError(CustomerContextError):
+    """No customer found for the given phone/mobile number."""
+
+
+def _normalise_phone(phone: str) -> str:
+    """Strip country code and non-digits, return last 10 digits."""
+    digits = re.sub(r"\D", "", phone)
+    return digits[-10:] if len(digits) >= 10 else digits
+
+
+class CustomerPhoneLookup:
+    """Resolves a mobile phone number to a customer_id.
+
+    Checks ``mobile_number`` column in *customers_df*.  Accepts numbers
+    with or without the +91 prefix (e.g. "9876543210" or "+919876543210").
+    """
+
+    def __init__(self, customers_df: pd.DataFrame) -> None:
+        if customers_df is None or "customer_id" not in customers_df.columns:
+            raise CustomerContextError("customers_df must have 'customer_id' column")
+        self._df = customers_df
+        # Pre-build a normalised index for O(1) lookup
+        if "mobile_number" in customers_df.columns:
+            self._phone_index: Dict[str, str] = {
+                _normalise_phone(str(row["mobile_number"])): str(row["customer_id"])
+                for _, row in customers_df.iterrows()
+                if row.get("mobile_number")
+            }
+        else:
+            self._phone_index = {}
+
+    def resolve(self, phone: str) -> str:
+        """Return the customer_id for *phone*, or raise PhoneNotFoundError."""
+        normalised = _normalise_phone(phone)
+        customer_id = self._phone_index.get(normalised)
+        if not customer_id:
+            raise PhoneNotFoundError(
+                f"No customer found for phone number ending in {normalised[-4:]}"
+            )
+        return customer_id
 
 class ContextBuildError(CustomerContextError):
     """An engine failed while building the context."""

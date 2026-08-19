@@ -7,6 +7,7 @@ pandas>=2.0
 qdrant-client>=1.9
 fastembed>=0.3
 python-dotenv>=1.0
+groq>=0.9.0
 # Required transitively to import the existing read-only ai_engine
 # (ai_engine/data_loader.py imports sqlalchemy at module import time).
 sqlalchemy>=2.0

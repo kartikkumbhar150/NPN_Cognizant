@@ -21,12 +21,11 @@ Architecture::
                     ↓
     ChatTurnResult (structured, provider-neutral)
 
-Design invariants:
-- No LLM.  Output is structured data only.
 - conversation_id ≠ customer_id.
 - PERSONALIZED_RECOMMENDATION: NBO runs only when a trusted
   AuthorizedCustomerContext is supplied.
 - UNSAFE_OR_SENSITIVE: no downstream banking services invoked.
+- Answer synthesis: done via Groq LLM AFTER all logic runs.
 """
 
 from __future__ import annotations
@@ -169,6 +168,7 @@ class ChatbotOrchestrator:
         product_resolver: Optional[ProductIdResolver] = None,
         settings: Optional[ChatbotSettings] = None,
         context_builder=None,
+        groq_service=None,
     ) -> None:
         self._intent_router = intent_router
         self._knowledge_retriever = knowledge_retriever
@@ -177,6 +177,7 @@ class ChatbotOrchestrator:
         self._product_resolver = product_resolver
         self._settings = settings or ChatbotSettings.from_env()
         self._context_builder = context_builder
+        self._groq_service = groq_service
 
     async def handle_turn(
         self,
@@ -227,6 +228,22 @@ class ChatbotOrchestrator:
             conv_state=conv_state, authorized_context=authorized_context,
         )
 
+        # ── Groq LLM Synthesis ───────────────────────────────────────────────
+        if self._groq_service and result.status is OrchestrationStatus.SUCCESS:
+            from chatbot.app.services.response_mapper import compose_answer
+            fallback = compose_answer(result)
+            gen_answer = self._groq_service.generate(
+                user_message=resolved_message,
+                intent=routing.intent.value,
+                rag_chunks=result.retrieved_chunks,
+                authorized_context=authorized_context,
+                recommendations=result.recommendations,
+                fallback_answer=fallback,
+            )
+            # Create a new result with the Groq answer
+            from dataclasses import replace
+            result = replace(result, answer=gen_answer)
+        
         self._update_conversation(conv_state, routing, result, resolved_message)
         return result
 

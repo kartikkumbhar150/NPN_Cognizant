@@ -47,7 +47,9 @@ class ChatbotStack:
 
         # Services
         self.context_builder = None    # CustomerContextBuilder
+        self.phone_lookup = None       # CustomerPhoneLookup
         self.nbo_adapter = None        # NBOAdapter
+        self.groq_service = None       # GroqAnswerService
         self.recommendation_orchestrator = None  # RecommendationOrchestrator
         self.conversation_store = None  # InMemoryConversationStore
         self.intent_router = None      # IntentRouter
@@ -123,7 +125,7 @@ class ChatbotStack:
             except Exception as exc:
                 logger.warning("Product resolver init failed: %s", exc)
 
-        # Customer context builder
+        # Customer context builder + phone lookup
         if self.engines and self.customers_df is not None:
             try:
                 self.context_builder = CustomerContextBuilder(
@@ -134,6 +136,12 @@ class ChatbotStack:
                 )
             except Exception as exc:
                 logger.warning("Customer context builder init failed: %s", exc)
+            try:
+                from chatbot.app.services.customer_context import CustomerPhoneLookup
+                self.phone_lookup = CustomerPhoneLookup(customers_df=self.customers_df)
+                logger.info("Phone lookup index built: %d entries", len(self.phone_lookup._phone_index))
+            except Exception as exc:
+                logger.warning("Phone lookup init failed: %s", exc)
 
         # NBO adapter
         if self.engines and self.engines.get("nbo_engine"):
@@ -162,6 +170,10 @@ class ChatbotStack:
         )
         self.intent_router = IntentRouter()
 
+        # Groq Answer Service
+        from chatbot.app.services.groq_answer import GroqAnswerService
+        self.groq_service = GroqAnswerService()
+
         # Orchestrator (needs router + retriever + conversation store)
         self.orchestrator = ChatbotOrchestrator(
             intent_router=self.intent_router,
@@ -171,6 +183,7 @@ class ChatbotStack:
             product_resolver=self.product_resolver,
             settings=self.settings,
             context_builder=self.context_builder,
+            groq_service=self.groq_service,
         )
 
         self._initialized = True

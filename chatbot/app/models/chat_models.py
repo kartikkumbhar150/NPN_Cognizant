@@ -63,6 +63,11 @@ class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=MAX_MESSAGE_LENGTH)
     conversation_id: Optional[UUID] = None
     customer_id: Optional[str] = None
+    phone_number: Optional[str] = Field(
+        default=None,
+        description="Customer mobile number (e.g. 9876543210 or +919876543210). "
+                    "If provided, the service resolves it to a customer_id automatically.",
+    )
 
     @field_validator("message")
     @classmethod
