@@ -229,7 +229,6 @@ def build_html_email(
 ) -> str:
     """Build a full HTML email with inline image, product facts, and quirky tagline."""
     image_file = pick_marketing_image(product)
-    image_data_uri = _image_to_data_uri(image_file)
     tagline = _get_tagline(product, first_name)
     facts = _get_product_facts(product)
     facts_html = "\n".join(
@@ -255,11 +254,11 @@ def build_html_email(
         text_c  = "#1a1a2e"
 
     image_section = ""
-    if image_data_uri:
+    if image_file:
         image_section = f"""
         <tr>
           <td align="center" style="padding:0 0 20px 0;">
-            <img src="{image_data_uri}"
+            <img src="cid:product_image"
                  alt="{product} — NPN Bank"
                  style="max-width:100%;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.15);" />
           </td>
@@ -447,11 +446,10 @@ def build_sms_body(
     first_name: str,
     product: str,
     body_text: str,
-    max_chars: int = 160,
 ) -> str:
     """
-    Build a punchy, witty SMS message (max_chars chars).
-    Format: [TAGLINE] [KEY FACT] [CTA]
+    Build a detailed, witty SMS message (multi-part SMS).
+    Format: [Heading] -> [Detailed Facts] -> [CTA]
     """
     product_lower = product.lower()
     taglines = _SMS_TAGLINES.get("credit card", _SMS_TAGLINES["personal loan"])
@@ -462,17 +460,14 @@ def build_sms_body(
 
     tagline = taglines[hash(first_name) % len(taglines)]
     facts = _get_product_facts(product)
-    # Strip emoji for SMS and take first fact
-    first_fact = re.sub(r"[^\x00-\x7F]+", "", facts[0]).strip().lstrip("- ")
+    
+    # Strip emojis for SMS and format as bullets (take up to 3 key facts)
+    facts_text = "\n".join(
+        f"• {re.sub(r'[^\x00-\x7F]+', '', f).strip().lstrip('- ')}" 
+        for f in facts[:3]
+    )
 
     cta = "Apply: npnbank.in/apply"
 
-    full = f"{first_name}! {tagline} | {first_fact} | {cta}"
-    if len(full) <= max_chars:
-        return full
-
-    # Trim fact if too long
-    budget = max_chars - len(f"{first_name}! {tagline} | ... | {cta}")
-    trimmed_fact = first_fact[:max(10, budget)]
-    full = f"{first_name}! {tagline} | {trimmed_fact}... | {cta}"
-    return full[:max_chars]
+    full = f"Hey {first_name}! {tagline}\n\nWhy {product}?\n{facts_text}\n\n{cta}"
+    return full

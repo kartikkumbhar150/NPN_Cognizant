@@ -931,16 +931,30 @@ Context-aware triggers to weave into the message (use only what's relevant):
 
 # ── Email sending helpers ────────────────────────────────────────────────────
 
-def _send_email_smtp(to_email: str, subject: str, html_body: str, plain_body: str, sender: str, password: str) -> bool:
+from email.mime.image import MIMEImage
+
+def _send_email_smtp(to_email: str, subject: str, html_body: str, plain_body: str, sender: str, password: str, image_path: str = None) -> bool:
     """Send a single HTML email via Gmail SMTP. Returns True on success."""
     try:
-        msg = MIMEMultipart("alternative")
+        msg = MIMEMultipart("related")
         msg["Subject"] = subject
         msg["From"] = f"NPN Bank Marketing <{sender}>"
         msg["To"] = to_email
+
+        msg_alt = MIMEMultipart("alternative")
+        msg.attach(msg_alt)
+
         # Attach plain text first (fallback), then HTML (preferred)
-        msg.attach(MIMEText(plain_body, "plain", "utf-8"))
-        msg.attach(MIMEText(html_body, "html", "utf-8"))
+        msg_alt.attach(MIMEText(plain_body, "plain", "utf-8"))
+        msg_alt.attach(MIMEText(html_body, "html", "utf-8"))
+        
+        if image_path and os.path.exists(image_path):
+            with open(image_path, "rb") as img_file:
+                img = MIMEImage(img_file.read())
+                img.add_header('Content-ID', '<product_image>')
+                img.add_header('Content-Disposition', 'inline')
+                msg.attach(img)
+
         with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
             server.ehlo()
             server.starttls()
@@ -1103,7 +1117,10 @@ OUTPUT: Return valid JSON only:
             )
 
             # Send as HTML email
-            ok = _send_email_smtp(cust_email, subject, html_body, body, GMAIL_SENDER, GMAIL_APP_PASSWORD)
+            from marketing_templates import pick_marketing_image, MARKETING_IMAGES_DIR
+            img_name = pick_marketing_image(product)
+            img_path = os.path.join(MARKETING_IMAGES_DIR, img_name) if img_name else None
+            ok = _send_email_smtp(cust_email, subject, html_body, body, GMAIL_SENDER, GMAIL_APP_PASSWORD, image_path=img_path)
             if ok:
                 sent_count += 1
                 print(f"[EMAIL] ✅ Sent to {cust_email} ({first_name} {last_name})")
