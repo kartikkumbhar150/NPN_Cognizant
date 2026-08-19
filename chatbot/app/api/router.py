@@ -73,6 +73,8 @@ async def health() -> Dict[str, Any]:
     stack = get_stack()
 
     components: Dict[str, str] = {}
+    # Safe mode indicator only — never the URL or credentials.
+    components["qdrant_mode"] = stack.settings.qdrant_mode
     if stack.engines is not None:
         components["ai_engine"] = "loaded"
     else:

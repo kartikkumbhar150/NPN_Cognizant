@@ -84,6 +84,14 @@ class ChatbotSettings:
     def general_knowledge_dir(self) -> Path:
         return DEFAULT_GENERAL_DIR
 
+    @property
+    def qdrant_mode(self) -> str:
+        """``"cloud"`` when QDRANT_URL is set, ``"local"`` otherwise.
+
+        Safe for logs/health output — carries no URL or credentials.
+        """
+        return "cloud" if (self.qdrant_url or "").strip() else "local"
+
     # ── Secret-safe repr ────────────────────────────────────────────────────
 
     def __repr__(self) -> str:
@@ -96,7 +104,19 @@ class ChatbotSettings:
 
     @classmethod
     def from_env(cls) -> "ChatbotSettings":
-        """Build settings from ``QDRANT_*`` / ``EMBEDDING_*`` / ``RAG_*`` vars."""
+        """Build settings from ``QDRANT_*`` / ``EMBEDDING_*`` / ``RAG_*`` vars.
+
+        ``chatbot/.env`` is loaded first (if present) so cloud credentials
+        stay out of the shell and git; real environment variables always
+        take precedence (``override=False``), which keeps CI/tests
+        deterministic when they set their own values.
+        """
+        try:
+            from dotenv import load_dotenv
+
+            load_dotenv(CHATBOT_DIR / ".env", override=False)
+        except ImportError:
+            pass  # python-dotenv optional at runtime; env-only mode still works
         return cls(
             qdrant_url=os.getenv("QDRANT_URL", "").strip(),
             qdrant_api_key=os.getenv("QDRANT_API_KEY", "").strip(),
