@@ -1,20 +1,25 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# Frontend Employee Dashboard
 
-# Run and deploy your AI Studio app
+## Purpose
 
-This contains everything you need to run your app locally.
+This directory contains the React and Vite employee dashboard for NPN Bank relationship managers and campaign users.
 
-View your app in AI Studio: https://ai.studio/apps/44199211-e7ee-47da-a324-6a8c1b69f413
+## Contents
 
-## Run Locally
+| Item | Description |
+| --- | --- |
+| `src/` | Application source code. |
+| `src/pages/` | Route-level pages for dashboard, customers, customer 360, campaigns, analytics, segments, and login. |
+| `src/components/` | Reusable UI components. |
+| `src/contexts/` | React context providers such as authentication state. |
+| `src/services/` | API client code. |
+| `public/` | Static public assets. |
+| `package.json` | Node dependency and script manifest. |
+| `vite.config.ts` | Vite configuration. |
+| `tsconfig.json` | TypeScript compiler configuration used by lint checks. |
+| `index.html` | HTML entry point. |
+| `.env.example` | Example frontend environment variables. |
 
-**Prerequisites:**  Node.js
+## Operational Notes
 
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+Use `npm run dev` for local development, `npm run build` for production bundles, and `npm run lint` for TypeScript checks.

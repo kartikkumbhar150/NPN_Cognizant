@@ -1,31 +1,20 @@
-# Synthetic Banking Dataset
+# Database CSV Assets
 
-This directory contains the synthetic CSV data generated for the AI-Powered Personalized Banking Marketing System.
+## Purpose
 
-## Files Generated So Far
+This directory contains local CSV datasets used for product catalogues, customers, merchants, transactions, and generated customer 360 records.
 
-1. **`customers.csv`**
-   - The customer master dataset. Contains demographic, employment, and income information for ~300 synthetic customers.
+## Contents
 
-2. **`raw_transactions.csv`**
-   - The transaction history. Contains ~10,000 realistic synthetic transactions across various merchants, categories, and channels.
+| Item | Description |
+| --- | --- |
+| `customers.csv` | Base customer records. |
+| `raw_transactions.csv` | Transaction-level activity used for feature generation. |
+| `merchants.csv` | Merchant reference data. |
+| `*_products.csv` | Product catalogues for credit cards, debit cards, loans, insurance, and investments. |
+| `generated_customer_360/` | Precomputed customer 360 extracts by product area. |
+| `insurance.csv and debitcard.csv` | Legacy or supplemental product and holding data. |
 
-3. **`credit_card_products.csv`**
-   - The master product catalogue for credit cards offered by the bank, detailing fees, eligibility, and reward structures.
+## Operational Notes
 
-4. **`loan_products.csv`**
-   - The master product catalogue for loan products offered by the bank, detailing interest rates, eligibility, and loan terms.
-
-5. **`customer_accounts.csv`** (To be generated)
-   - Maps customers to their bank accounts (e.g. Savings, Current). Links with `customers.csv`.
-
-6. **`customer_credit_cards.csv`** (To be generated)
-   - Maps customers to the credit cards they own. Links `customers.csv` and `credit_card_products.csv`.
-
-7. **`customer_loans.csv`** (To be generated)
-   - Maps customers to the loans they have taken. Links `customers.csv` and `loan_products.csv`.
-
-8. **`merchants.csv`** (To be generated)
-   - The master list of merchants used in the transactions. Links with `raw_transactions.csv`.
-
-**Note:** This data is entirely synthetic and generated for research/prototype purposes. Do not use real customer financial information in this dataset.
+Treat these files as development data. If schema changes are made here, update loaders, generation scripts, and tests together.

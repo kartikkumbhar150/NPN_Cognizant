@@ -1,570 +1,927 @@
-# NPN Bank — GenAI Hyper-Personalized Banking Marketing Platform
+# NPN Bank GenAI Hyper-Personalized Banking Marketing Platform
 
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.110+-009688.svg?style=flat&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com)
-[![React](https://img.shields.io/badge/React-19.0-61DAFB.svg?style=flat&logo=react&logoColor=black)](https://react.dev)
-[![Python](https://img.shields.io/badge/Python-3.10+-3776AB.svg?style=flat&logo=python&logoColor=white)](https://www.python.org)
-[![Redis](https://img.shields.io/badge/Redis-Cache%20%26%20Events-DC382D.svg?style=flat&logo=redis&logoColor=white)](https://redis.io)
-[![Supabase](https://img.shields.io/badge/Database-Supabase%20%2F%20PostgreSQL-3ECF8E.svg?style=flat&logo=supabase&logoColor=white)](https://supabase.com)
-[![Groq](https://img.shields.io/badge/GenAI-Groq%20LLM%20(Llama%203)-F55036.svg?style=flat)](https://groq.com)
-[![Vite](https://img.shields.io/badge/Vite-6.2-646CFF.svg?style=flat&logo=vite&logoColor=white)](https://vitejs.dev)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+## 1. Executive Summary
 
-An enterprise-grade, AI-driven banking intelligence and hyper-personalized marketing platform. Built for **NPN Bank (Cognizant Project)**, this solution shifts banking outreach from generic broadcast marketing to **context-aware, real-time, financial gap-driven recommendations** backed by deterministic explainability, marketing guardrails, and Groq-powered generative marketing copy.
+NPN Bank is a full-stack banking intelligence, customer 360, next-best-offer, campaign orchestration, and conversational assistance platform. The project is designed for a banking relationship-management use case where employees need to understand customer behavior, detect financial needs, explain recommendation logic, generate compliant personalized outreach, and monitor campaign outcomes.
 
----
+The repository combines four major systems:
 
-## 📑 Table of Contents
+1. A Python FastAPI backend that powers the employee dashboard and exposes customer, recommendation, campaign, authentication, and analytics endpoints.
+2. A modular Python AI engine that transforms raw banking data into customer features, behavioral insights, financial gap assessments, eligibility decisions, product-fit scores, next-best-offer recommendations, explanations, marketing guard decisions, and generated campaign copy.
+3. A React and Vite frontend dashboard for employees to authenticate, inspect customers, review customer 360 profiles, view recommendation evidence, create campaigns, and monitor analytics.
+4. A standalone chatbot service that provides deterministic banking answers, intent routing, multi-turn conversation handling, retrieval-augmented knowledge lookup, and optional customer-aware recommendation support.
 
-- [1. Executive Summary & Problem Statement](#1-executive-summary--problem-statement)
-- [2. System Architecture](#2-system-architecture)
-- [3. Key Platform Capabilities](#3-key-platform-capabilities)
-  - [3.1 Customer 360° Intelligence](#31-customer-360-intelligence)
-  - [3.2 Financial Gap Detection & Health Scoring](#32-financial-gap-detection--health-scoring)
-  - [3.3 Real-Time Event Engine](#33-real-time-event-engine)
-  - [3.4 Next Best Offer (NBO) & Eligibility Decisioning](#34-next-best-offer-nbo--eligibility-decisioning)
-  - [3.5 Marketing Guard & Consent Safety Gate](#35-marketing-guard--consent-safety-gate)
-  - [3.6 Context-Aware GenAI Copywriting](#36-context-aware-genai-copywriting)
-  - [3.7 Closed-Loop Campaign Studio & Analytics](#37-closed-loop-campaign-studio--analytics)
-  - [3.8 Banking Chatbot & Semantic Search (RAG)](#38-banking-chatbot--semantic-search-rag)
-- [4. Backend & Redis Architecture](#4-backend--redis-architecture)
-  - [4.1 Backend Service Design](#41-backend-service-design)
-  - [4.2 Redis Caching & Event Layer](#42-redis-caching--event-layer)
-- [5. Project Directory Structure](#5-project-directory-structure)
-- [6. End-to-End AI Engine Pipeline](#6-end-to-end-ai-engine-pipeline)
-- [7. API Reference](#7-api-reference)
-- [8. Technology Stack](#8-technology-stack)
-- [9. Setup & Installation Guide](#9-setup--installation-guide)
-  - [9.1 Prerequisites](#91-prerequisites)
-  - [9.2 Environment Configuration](#92-environment-configuration)
-  - [9.3 Backend Setup](#93-backend-setup)
-  - [9.4 Frontend Setup](#94-frontend-setup)
-  - [9.5 Chatbot Setup](#95-chatbot-setup)
-- [10. Running the Platform](#10-running-the-platform)
-- [11. Testing & Verification](#11-testing--verification)
-- [12. Contributing & Pull Request Guidelines](#12-contributing--pull-request-guidelines)
+The platform is intended to move retail banking outreach away from broad product blasting and toward auditable, context-aware, customer-benefit-driven engagement.
 
----
+## 2. Business Problem
 
-## 1. Executive Summary & Problem Statement
+Traditional banking marketing often relies on static demographic segments, generic product campaigns, and disconnected customer signals. That approach creates several problems:
 
-Traditional retail banking marketing relies on broad demographic segments, static propensity tables, and unsolicited outbound messages. This leads to **customer fatigue, high opt-out rates, and low conversion**.
+- Customers receive offers that do not match their actual financial behavior.
+- Relationship managers cannot easily explain why a product was recommended.
+- Campaign teams risk contacting customers too frequently or without considering consent preferences.
+- Product recommendations can ignore existing holdings, financial gaps, credit constraints, or recent life events.
+- Analytics are often separated from the decisioning layer, making closed-loop improvement difficult.
 
-**The NPN Bank Solution:**
-A real-time financial intelligence platform answering one fundamental question:
-> *"Given what this customer is doing financially right now, what banking product is genuinely most relevant to them, why are they eligible, and how should the bank communicate it safely and persuasively?"*
+NPN Bank addresses these issues by combining customer data, transaction behavior, product catalogues, deterministic decisioning, explainability, and optional generative content into a single workflow.
 
-```
-Traditional Mass Marketing               NPN Hyper-Personalized AI Marketing
--------------------------               ------------------------------------
-- Blanket blast campaigns               - Multi-window behavioral profiling (7-365 days)
-- Static product pushes                 - Gap detection (e.g., earns ₹12L, ₹0 invested)
-- Black-box / opaque logic              - Deterministic eligibility & audit trail
-- Generic email templates               - Time-of-day & cohort-tailored GenAI copy
-- Disconnected conversion data          - Closed-loop funnel analytics & fatigue guards
-```
+## 3. Solution Overview
 
----
+The central question answered by the platform is:
 
-## 2. System Architecture
+> Given a customer's current financial profile and recent behavior, what banking product is genuinely relevant, why is the customer eligible, what evidence supports the recommendation, and how should the bank communicate it safely and professionally?
+
+The platform answers this through a layered architecture:
+
+- Data is loaded from Supabase or local CSV files.
+- Customer-level features are generated from demographics, holdings, products, and transactions.
+- Behavioral and financial engines identify patterns, events, needs, and gaps.
+- Product eligibility logic removes unsuitable offers using hard constraints.
+- Product-fit and next-best-offer engines rank the most relevant opportunities.
+- Explainability logic produces auditable reasons for each recommendation.
+- Marketing guardrails enforce consent, fatigue, channel, and safety rules.
+- The backend exposes this intelligence through APIs.
+- The frontend presents it to employees through dashboard pages.
+- The chatbot answers banking questions and can use trusted customer context for personalized recommendations.
+
+## 4. High-Level Architecture
 
 ```mermaid
 graph TD
-    subgraph Client Layer ["🖥️ Frontend & Client Layer"]
-        UI["React 19 Dashboard (Vite + Tailwind)"]
-        CB["Banking Chatbot Interface"]
+    subgraph Users[Users and Channels]
+        Employee[Bank Employee]
+        Customer[Customer or Chat User]
     end
 
-    subgraph API Gateway ["⚡ API Gateway & Auth"]
-        FastAPI["FastAPI REST Server (:8000)"]
-        JWT["OAuth2 / JWT Authentication"]
-        CORS["CORS & Request Middleware"]
+    subgraph Frontend[Presentation Layer]
+        Dashboard[React Employee Dashboard]
+        ChatClient[Chat Client or API Consumer]
     end
 
-    subgraph Caching Layer ["🚀 Redis High-Speed Layer"]
-        R_C360["Customer 360 Aggregate Cache"]
-        R_SESS["Session & Token Blocklist"]
-        R_THROT["Campaign Throttling & Cooldowns"]
-        R_PUBSUB["Pub/Sub Event Bus"]
+    subgraph APIs[API Layer]
+        BackendAPI[Python FastAPI Employee Backend]
+        ChatbotAPI[Standalone Chatbot FastAPI Service]
     end
 
-    subgraph AI Pipeline ["🧠 Banking AI Intelligence Pipeline (v2.0 / v3.0)"]
-        FE["Feature Engine (Rolling Windows)"]
-        BE["Behavior Engine (Spending Trajectory)"]
-        EE["Event Engine (Triggers & Thresholds)"]
-        FA["Financial Analyst (Gap Detection & Health Score)"]
-        EL["Eligibility Engine (Hard Constraints)"]
-        PF["Product Fit Engine (Relevance Scoring)"]
-        NBO["Next Best Offer Engine (Ensemble Ranker)"]
-        EXP["Explainability Engine (Audit Reasons)"]
-        MG["Marketing Guard (Consent & Fatigue Gate)"]
-        GENAI["GenAI Service (Groq LLM / Time & Cohort Aware)"]
+    subgraph Security[Access and Request Controls]
+        Auth[Employee Login and JWT]
+        CORS[CORS Middleware]
+        TrustedContext[Trusted Customer Identifier Context]
     end
 
-    subgraph Data Layer ["💾 Persistent Storage & Vector Store"]
-        PG["Supabase / PostgreSQL Database"]
-        CSV["Synthetic Banking Datasets (CSV)"]
-        QD["Qdrant Vector DB (Chatbot Knowledge)"]
+    subgraph Intelligence[AI Decisioning Layer]
+        DataLoader[Data Loader]
+        FeatureEngine[Feature Engine]
+        BehaviorEngine[Behavior Engine]
+        EventEngine[Event Engine]
+        FinancialAnalyst[Financial Analyst]
+        Segmentation[Segmentation and Clustering]
+        Eligibility[Eligibility Engine]
+        ProductFit[Product Fit Engine]
+        NBO[Next Best Offer Engine]
+        Explainability[Explainability Engine]
+        MarketingGuard[Marketing Guard]
+        GenAI[GenAI Service]
     end
 
-    UI <-->|REST API + Bearer Token| FastAPI
-    CB <-->|FastAPI / RAG| FastAPI
-    FastAPI <--> JWT
-    FastAPI <--> CORS
+    subgraph Chatbot[Chatbot Intelligence Layer]
+        IntentRouter[Intent Router]
+        Conversation[Conversation Store]
+        Retriever[Knowledge Retriever]
+        ResponseMapper[Response Mapper]
+        RecommendationService[Recommendation Service]
+    end
 
-    FastAPI <-->|Low-Latency Read/Write| Caching Layer
-    FastAPI --> AI Pipeline
+    subgraph Storage[Storage and Knowledge Layer]
+        CSV[Local CSV Banking Data]
+        Supabase[Supabase or PostgreSQL]
+        Qdrant[Qdrant Vector Store]
+        MarkdownKnowledge[Curated Markdown Knowledge]
+        Config[YAML Configuration]
+    end
 
-    FE --> BE & EE & FA
-    FA & EE & BE --> EL
-    EL --> PF --> NBO --> EXP --> MG --> GENAI
+    Employee --> Dashboard
+    Customer --> ChatClient
+    Dashboard --> BackendAPI
+    ChatClient --> ChatbotAPI
 
-    AI Pipeline <--> PG
-    AI Pipeline <--> CSV
-    CB <--> QD
+    BackendAPI --> Auth
+    BackendAPI --> CORS
+    ChatbotAPI --> CORS
+    ChatbotAPI --> TrustedContext
+
+    BackendAPI --> DataLoader
+    DataLoader --> CSV
+    DataLoader --> Supabase
+    DataLoader --> FeatureEngine
+    FeatureEngine --> BehaviorEngine
+    FeatureEngine --> EventEngine
+    FeatureEngine --> FinancialAnalyst
+    FeatureEngine --> Segmentation
+    BehaviorEngine --> Eligibility
+    EventEngine --> Eligibility
+    FinancialAnalyst --> Eligibility
+    Segmentation --> Eligibility
+    Eligibility --> ProductFit
+    ProductFit --> NBO
+    NBO --> Explainability
+    Explainability --> MarketingGuard
+    MarketingGuard --> GenAI
+    Config --> EventEngine
+    Config --> Eligibility
+    Config --> ProductFit
+    Config --> NBO
+    Config --> MarketingGuard
+
+    ChatbotAPI --> IntentRouter
+    ChatbotAPI --> Conversation
+    ChatbotAPI --> Retriever
+    ChatbotAPI --> RecommendationService
+    Retriever --> Qdrant
+    MarkdownKnowledge --> Qdrant
+    RecommendationService --> DataLoader
+    RecommendationService --> NBO
+    IntentRouter --> ResponseMapper
+    Retriever --> ResponseMapper
+    RecommendationService --> ResponseMapper
 ```
 
----
+## 5. Runtime Architecture by Layer
 
-## 3. Key Platform Capabilities
+### 5.1 Presentation Layer
 
-### 3.1 Customer 360° Intelligence
-- **Comprehensive Demographic & Financial Aggregation:** Synthesizes income, salary stability, transaction velocity, liquidity ratio, savings rate, and credit score.
-- **Dynamic Category Breakdowns:** Real-time breakdown across Dining, Travel, Shopping, Utilities, Investments, Healthcare, Rent, and Fuel.
-- **Existing Holdings Inspection:** Cross-references active credit cards, loans, fixed deposits, and insurance policies to eliminate redundant marketing.
+The presentation layer is implemented in `frontend/`. It is a React application built with Vite. Its responsibilities include:
 
-### 3.2 Financial Gap Detection & Health Scoring
-The core algorithmic differentiator in `financial_analyst.py`:
-- **Financial Health Score (0–100):** Weighted across Savings Rate (30 pts), Investment Activity (25 pts), Insurance Coverage (20 pts), and Spending Discipline (25 pts).
-- **Automated Gap Identification:**
-  - `NO_INVESTMENT`: High income (>₹6L) + zero investment activity $\rightarrow$ SIP / Mutual Fund offer.
-  - `NO_INSURANCE`: Age > 30 + dependent signals + no insurance txns $\rightarrow$ Term / Health Insurance.
-  - `NO_EMERGENCY_FUND`: Low savings rate (<10%) + zero fixed deposits $\rightarrow$ Auto-Sweep FD / Savings.
-  - `OVERSPENDING_DINING`: Dining spend > 15% of net income $\rightarrow$ Dining Cashback Credit Card.
-  - `FREQUENT_TRAVELLER_NO_CARD`: Travel spend > 15% without a dedicated co-branded travel card $\rightarrow$ Premium Travel Card.
-  - `RENT_BURDEN`: High recurring rent debits (>35% income) $\rightarrow$ Home Loan assistance.
+- Rendering employee login and protected dashboard routes.
+- Presenting executive KPIs and analytics summaries.
+- Listing customers and exposing customer search or navigation.
+- Showing customer 360 records and recommendation context.
+- Supporting campaign creation, success feedback, and campaign analytics.
+- Calling backend APIs through a central service module.
 
-### 3.3 Real-Time Event Engine
-- Scans rolling transactions to detect life events: **Flight bookings, hotel reservations, international currency exchange, medical emergencies, annual salary increments, and major milestone purchases**.
-- Emits high-priority event triggers consumed immediately by the recommendation pipeline.
+The frontend is not responsible for decisioning. Recommendation, eligibility, analytics, and campaign logic are expected to come from backend APIs.
 
-### 3.4 Next Best Offer (NBO) & Eligibility Decisioning
-- **Strict Two-Stage Filtering:**
-  1. *Hard Eligibility Gate:* Filters by minimum income, age brackets, minimum credit score, KYC compliance, and existing product holdings.
-  2. *Product Fit Scoring:* Computes a multi-factor behavioral fit score using cosine/tag alignment between transaction patterns and bank product specs.
-- **Ensemble Ranking:** Ranks opportunities using weighted parameters (`nbo_weights.yaml`) balancing customer benefit, profitability, and gap urgency.
+### 5.2 Employee Backend API Layer
 
-### 3.5 Marketing Guard & Consent Safety Gate
-- **Hard Gate Enforcement (`marketing_guard.py`):**
-  - Verifies explicit customer DND (Do-Not-Disturb) and marketing consent.
-  - **Campaign Fatigue Limits:** Enforces cooldown windows (e.g., max 2 campaigns/month, 7-day spacing between touches).
-  - **Channel Optimization:** Selects preferred channel (Email / SMS / Mobile Push) based on historical open and click rates.
+The employee backend is implemented in `Python/api_server.py`. It is the main API boundary for the dashboard and coordinates:
 
-### 3.6 Context-Aware GenAI Copywriting
-- **Powered by Groq LLM (Llama 3 / Mixtral):**
-  - Ingests exact financial facts (actual monthly earnings, exact category spend, detected gaps).
-  - **Time & Day-Aware Personalization:** Dynamically alters greeting and tone based on day-of-week and time-of-day (e.g., weekend dining context vs. weekday investment context).
-  - **Generational Cohort Adaptation:**
-    - *Gen Z:* Snappy, value-first, mobile-centric tone.
-    - *Millennial:* Goal-oriented, wealth-building, balanced copy.
-    - *Gen X / Boomers:* Security-focused, comprehensive, professional language.
-  - Deterministic fallback generator when LLM API keys are unavailable.
+- FastAPI application initialization.
+- CORS policy for local and deployed frontend origins.
+- Prototype employee authentication and JWT token generation.
+- Lazy loading of customer data and AI engine instances.
+- Customer 360 retrieval and aggregation.
+- Campaign creation and campaign status workflows.
+- Analytics endpoints for dashboard and campaign reporting.
+- Optional integrations for email, SMS, Supabase, and Groq.
 
-### 3.7 Closed-Loop Campaign Studio & Analytics
-- Bank managers can review AI recommendations, inspect the full mathematical evidence trail, customize messaging, and launch single or batch campaigns.
-- Real-time funnel tracking: **Sent $\rightarrow$ Delivered $\rightarrow$ Opened $\rightarrow$ Clicked $\rightarrow$ Applied $\rightarrow$ Converted**.
+This layer should remain thin where possible. It should validate API requests, call domain services or AI engine modules, and return structured responses to the frontend.
 
-### 3.8 Banking Chatbot & Semantic Search (RAG)
-- Standalone `/chatbot` module integrating **FastEmbed embeddings** and **Qdrant vector database** for multi-turn customer queries and HDFC/NPN product knowledge retrieval.
+### 5.3 AI Decisioning Layer
 
----
+The AI decisioning layer lives in `Python/ai_engine/`. It is organized into focused modules rather than one monolithic model. This makes the system easier to test, explain, and audit.
 
-## 4. Backend & Redis Architecture
+The decisioning flow is:
 
-### 4.1 Backend Service Design
-The backend is built with **FastAPI** (`Python/api_server.py`) and organized into isolated, single-responsibility engines inside `Python/ai_engine/`:
+1. `data_loader.py` loads customer, transaction, product, and holding data.
+2. `feature_engine.py` converts raw records into normalized customer features.
+3. `behavior_engine.py` interprets recurring behavior, income patterns, and category spend.
+4. `event_engine.py` detects recent high-signal customer events.
+5. `financial_analyst.py` identifies financial gaps and computes financial health indicators.
+6. `segmentation.py` and `clustering_engine.py` group customers into actionable cohorts.
+7. `eligibility_engine.py` removes products that fail hard constraints.
+8. `product_fit_engine.py` scores the fit between remaining products and customer needs.
+9. `nbo_engine.py` ranks the best available offers.
+10. `explainability_engine.py` produces evidence and human-readable reasoning.
+11. `marketing_guard.py` applies consent, fatigue, and channel-safety controls.
+12. `genai_service.py` creates personalized outreach content when generation is enabled.
 
-| Module | Primary Responsibility |
-|---|---|
-| `data_loader.py` | Dual-source ingestion (Supabase PostgreSQL + local CSV fallback). |
-| `feature_engine.py` | Normalization, merchant MCC tagging, and 7/30/60/90/180/365-day rolling windows. |
-| `behavior_engine.py` | Monthly cash flow trajectory, income volatility, and expense velocity. |
-| `event_engine.py` | Real-time threshold matching for milestone financial transactions. |
-| `financial_analyst.py` | Gap detection rules, financial health index calculation, and benchmark analysis. |
-| `eligibility_engine.py` | Non-negotiable regulatory and credit qualification rules. |
-| `product_fit_engine.py` | Mathematical relevance matching against bank product catalogs. |
-| `nbo_engine.py` | Multi-objective NBO optimization and top-1 product selection. |
-| `explainability_engine.py` | Deterministic evidence generator for regulatory auditability. |
-| `marketing_guard.py` | Compliance, DND verification, cooldowns, and anti-fatigue limits. |
-| `genai_service.py` | Prompt engineering, time context injection, and Groq LLM execution. |
+### 5.4 Data Layer
 
-### 4.2 Redis Caching & Event Layer
-Redis is integrated into the system architecture to deliver **sub-millisecond latency** and support distributed banking workloads:
+The project supports both local and external data paths:
 
+- Local CSV files in `Python/Database_csvs/` provide development and fallback datasets.
+- Generated customer 360 datasets are stored in `Python/Database_csvs/generated_customer_360/` and `Python/database_generation_scripts/generated_customer_360/`.
+- Supabase or PostgreSQL can be used for persistent application data and campaign workflows.
+- YAML configuration in `Python/ai_engine/config/` controls thresholds and ranking weights.
+
+The local CSV path is useful for demos, testing, and development without a remote database. The Supabase path is useful when persistent state, shared campaign data, or deployed API behavior is required.
+
+### 5.5 Chatbot Layer
+
+The chatbot service lives in `chatbot/` and runs separately from the employee backend. It is designed as a standalone FastAPI service with its own package structure. Its responsibilities include:
+
+- Accepting chat requests through `/chat` and simplified question requests through `/ask`.
+- Reporting service readiness through `/health`.
+- Classifying user intent with deterministic routing.
+- Maintaining multi-turn conversation context.
+- Loading curated knowledge documents.
+- Chunking and embedding knowledge for retrieval.
+- Searching Qdrant for source-grounded answers.
+- Mapping internal turn results into stable API response models.
+- Optionally using trusted customer identifiers to return personalized recommendation context.
+
+The chatbot does not infer identity from free-text messages. Customer-specific behavior should use trusted identifiers passed by the calling application after authentication.
+
+## 6. Detailed Component Architecture
+
+### 6.1 Frontend Component Map
+
+```mermaid
+graph TD
+    Main[main.jsx] --> App[App.jsx]
+    App --> AuthContext[AuthContext.jsx]
+    App --> Sidebar[Sidebar.jsx]
+    App --> Header[Header.jsx]
+    App --> Pages[Route Pages]
+    Pages --> Login[Login.jsx]
+    Pages --> Dashboard[Dashboard.jsx]
+    Pages --> Customers[Customers.jsx]
+    Pages --> Customer360[Customer360.jsx]
+    Pages --> Campaigns[Campaigns.jsx]
+    Pages --> CampaignAnalytics[CampaignAnalytics.jsx]
+    Pages --> Analytics[Analytics.jsx]
+    Pages --> Segments[Segments.jsx]
+    Pages --> APIService[services/api.js]
+    Dashboard --> KpiCard[KpiCard.jsx]
+    Campaigns --> CampaignSuccessModal[CampaignSuccessModal.jsx]
+    Customer360 --> OfferSuccessModal[OfferSuccessModal.jsx]
+    APIService --> BackendAPI[Python Backend API]
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           REDIS CACHE TOPOLOGY                          │
-├────────────────────────────────┬────────────────────────────────────────┤
-│ Key Namespace Pattern          │ Purpose & Eviction Strategy            │
-├────────────────────────────────┼────────────────────────────────────────┤
-│ c360:profile:{customer_id}     │ Serialized Customer 360 Feature Set    │
-│                                │ (TTL: 15 min / Evict on new txn)       │
-│ nbo:recommendation:{cust_id}   │ Precomputed NBO result & audit trail   │
-│                                │ (TTL: 1 hour)                          │
-│ auth:token_blocklist:{jti}     │ Revoked JWT tokens for secure logout   │
-│                                │ (TTL: Matches JWT expiry)              │
-│ guard:fatigue:{customer_id}    │ Campaign touch counter & rate limiter  │
-│                                │ (Sliding window rate limit)            │
-│ analytics:campaign:{camp_id}   │ Real-time in-memory counters           │
-│                                │ (INCR opens/clicks/conversions)        │
-│ pubsub:banking_events          │ Event bus for real-time transaction    │
-│                                │ streaming into Event Engine            │
-└────────────────────────────────┴────────────────────────────────────────┘
+
+### 6.2 Backend Decisioning Flow
+
+```mermaid
+sequenceDiagram
+    participant UI as Frontend Dashboard
+    participant API as FastAPI Backend
+    participant Loader as Data Loader
+    participant Features as Feature Engine
+    participant Analysis as Behavior and Financial Engines
+    participant Eligibility as Eligibility Engine
+    participant Fit as Product Fit Engine
+    participant NBO as NBO Engine
+    participant Explain as Explainability Engine
+    participant Guard as Marketing Guard
+    participant Copy as GenAI Service
+
+    UI->>API: Request customer recommendation
+    API->>Loader: Load customer, transactions, products, holdings
+    Loader-->>API: Raw and structured data
+    API->>Features: Build customer feature set
+    Features-->>API: Rolling-window and profile features
+    API->>Analysis: Analyze behavior, events, gaps, and segment
+    Analysis-->>API: Insights and financial context
+    API->>Eligibility: Filter products by hard constraints
+    Eligibility-->>API: Eligible product list
+    API->>Fit: Score products against customer context
+    Fit-->>API: Product fit scores
+    API->>NBO: Rank next-best offers
+    NBO-->>API: Ranked recommendations
+    API->>Explain: Generate reasons and evidence
+    Explain-->>API: Explanation payload
+    API->>Guard: Apply consent and fatigue rules
+    Guard-->>API: Allowed or blocked marketing decision
+    API->>Copy: Generate campaign message when allowed
+    Copy-->>API: Personalized message or fallback copy
+    API-->>UI: Recommendation, explanation, guard status, and copy
 ```
 
-#### Why Redis is Essential for this Architecture:
-1. **Low-Latency Dashboard Loading:** Pre-aggregating transaction features for thousands of customers and caching Customer 360 summaries reduces database I/O by >85%.
-2. **Atomic Rate-Limiting & Fatigue Protection:** Using Redis atomic increment operations (`INCR`, `EXPIRE`) guarantees that no customer receives duplicate marketing blasts even across concurrent microservices.
-3. **Decoupled Analytics Ingestion:** High-volume email open and click webhooks hit Redis counters before asynchronous batch persistence to PostgreSQL/Supabase.
+### 6.3 Chatbot Request Flow
 
----
+```mermaid
+sequenceDiagram
+    participant Client as Chat Client
+    participant API as Chatbot API
+    participant Stack as Dependency Stack
+    participant Intent as Intent Router
+    participant Conv as Conversation Service
+    participant RAG as Knowledge Retriever
+    participant Rec as Recommendation Service
+    participant Mapper as Response Mapper
 
-## 5. Project Directory Structure
+    Client->>API: POST /chat
+    API->>Stack: Load or reuse chatbot dependencies
+    API->>Intent: Classify message intent
+    API->>Conv: Load conversation context
+    alt Knowledge question
+        API->>RAG: Retrieve relevant source chunks
+        RAG-->>API: Sources and grounded content
+    else Recommendation request
+        API->>Rec: Resolve trusted customer context and recommendations
+        Rec-->>API: Recommendation payloads
+    end
+    API->>Mapper: Build public response model
+    Mapper-->>API: ChatResponse
+    API-->>Client: Answer, intent, confidence, sources, recommendations, conversation_id
+```
+
+### 6.4 Data and Knowledge Ingestion Flow
+
+```mermaid
+graph LR
+    Generator[Database Generation Scripts] --> CSVData[CSV Data Files]
+    CSVData --> Loader[AI Engine Data Loader]
+    CSVData --> SupabasePush[Supabase Push Scripts]
+    SupabasePush --> Supabase[(Supabase or PostgreSQL)]
+    Supabase --> Loader
+    KnowledgeDocs[Markdown Knowledge Documents] --> Manifest[Knowledge Manifest]
+    Manifest --> Ingestion[Chatbot Ingestion Script]
+    KnowledgeDocs --> Ingestion
+    Ingestion --> Embeddings[Embedding Model]
+    Embeddings --> Qdrant[(Qdrant Collection)]
+    Qdrant --> Retriever[Chatbot Retriever]
+```
+
+## 7. Repository Structure
 
 ```text
 NPN_Cognizant/
-├── AI_service.md                     # Deep Financial Intelligence RFC & specifications
-├── GenAI_Banking_Marketing_README.md # Full banking marketing technical documentation
-├── stats.json                        # Dataset and campaign aggregate baseline statistics
-│
-├── Python/                           # ── Python AI Engine & API Backend ──
-│   ├── api_server.py                 # FastAPI REST API Server (JWT, Endpoints, Router)
-│   ├── requirements.txt              # Backend dependencies (FastAPI, Groq, Supabase, Pandas)
-│   ├── run_pipeline.py               # Standalone CLI runner for Customer 360 & NBO
-│   ├── generate_database.py          # Synthetic banking dataset generator
-│   ├── push_to_supabase.py           # Database migration to Supabase PostgreSQL
-│   ├── ai_engine/                    # Modular AI & analytics engines
-│   │   ├── feature_engine.py         # Rolling-window feature extraction & normalization
-│   │   ├── behavior_engine.py        # Spending behavior & income trajectory
-│   │   ├── event_engine.py           # Real-time event detection triggers
-│   │   ├── financial_analyst.py      # Gap detection & Financial Health Scorer (0-100)
-│   │   ├── eligibility_engine.py     # Hard eligibility & product constraints
-│   │   ├── product_fit_engine.py     # Product behavioral fit scoring
-│   │   ├── nbo_engine.py             # Next Best Offer ranking algorithm
-│   │   ├── explainability_engine.py  # Regulatory audit trails & structured reasons
-│   │   ├── marketing_guard.py        # Consent, frequency capping, & safety gate
-│   │   ├── genai_service.py          # Groq LLM integration & prompt packaging
-│   │   ├── segmentation.py           # Customer lifecycle & behavioral segmentation
-│   │   ├── data_loader.py            # Supabase / CSV data access layer
-│   │   └── config/                   # YAML decision rules & thresholds
-│   │       ├── marketing.yaml        # Cooldown intervals & contact frequency limits
-│   │       ├── nbo_weights.yaml      # Multi-objective NBO ranking weights
-│   │       └── thresholds.yaml       # Financial benchmarks & gap thresholds
-│   └── Database_csvs/                # Synthetic banking dataset CSV files
-│       ├── customers.csv             # Customer demographic profiles
-│       ├── raw_transactions.csv      # Multi-category transaction histories
-│       ├── credit_card_products.csv  # Bank credit card catalog
-│       ├── debit_card_products.csv   # Bank debit card catalog
-│       ├── loan_products.csv         # Retail loan offerings (Home, Personal, Auto)
-│       ├── investment_products.csv   # Mutual funds, SIPs, and Fixed Deposits
-│       └── insurance_products.csv    # Life, Health, and Motor insurance policies
-│
-├── frontend/                         # ── React 19 Employee Dashboard ──
-│   ├── package.json                  # Frontend dependencies (React 19, Vite, Tailwind v4)
-│   ├── vite.config.ts                # Vite configuration
+├── README.md
+├── AI_service.md
+├── GenAI_Banking_Marketing_README.md
+├── stats.json
+├── Python/
+│   ├── README.md
+│   ├── api_server.py
+│   ├── requirements.txt
+│   ├── Dockerfile
+│   ├── generate_database.py
+│   ├── push_to_supabase.py
+│   ├── push_customer_360.py
+│   ├── push_products_only.py
+│   ├── push_customers.py
+│   ├── push_investments.py
+│   ├── inspect_tables.py
+│   ├── list_tables.py
+│   ├── fix_schema.py
+│   ├── fix_counters.py
+│   ├── fix_customers.py
+│   ├── test_api.py
+│   ├── test_groq.py
+│   ├── test_init.py
+│   ├── test_json_parse.py
+│   ├── output.txt
+│   ├── ai_engine/
+│   │   ├── README.md
+│   │   ├── AI_ENGINE_FLOWCHARTS.txt
+│   │   ├── behavior_engine.py
+│   │   ├── clustering_engine.py
+│   │   ├── data_loader.py
+│   │   ├── eligibility_engine.py
+│   │   ├── event_engine.py
+│   │   ├── explainability_engine.py
+│   │   ├── feature_engine.py
+│   │   ├── financial_analyst.py
+│   │   ├── genai_service.py
+│   │   ├── indian_calendar.py
+│   │   ├── marketing_guard.py
+│   │   ├── nbo_engine.py
+│   │   ├── product_fit_engine.py
+│   │   ├── run_pipeline.py
+│   │   ├── segmentation.py
+│   │   └── config/
+│   │       ├── README.md
+│   │       ├── marketing.yaml
+│   │       ├── nbo_weights.yaml
+│   │       └── thresholds.yaml
+│   ├── Database_csvs/
+│   │   ├── README.md
+│   │   ├── customers.csv
+│   │   ├── raw_transactions.csv
+│   │   ├── merchants.csv
+│   │   ├── credit_card_products.csv
+│   │   ├── debit_card_products.csv
+│   │   ├── investment_products.csv
+│   │   ├── insurance_products.csv
+│   │   ├── loan_products.csv
+│   │   └── generated_customer_360/
+│   │       ├── README.md
+│   │       ├── customer_360.json
+│   │       ├── customers.csv
+│   │       └── customer product holding CSV files
+│   ├── database_generation_scripts/
+│   │   ├── README.md
+│   │   ├── customer.py
+│   │   ├── raw_transactions.py
+│   │   ├── credit_card_data.py
+│   │   ├── debit_card_data.py
+│   │   ├── insurance_data.py
+│   │   ├── investments.py
+│   │   ├── loan_products.py
+│   │   └── generated_customer_360/
+│   │       └── README.md
+│   └── scripts/
+│       ├── README.md
+│       ├── add_email_column.py
+│       ├── migrate_to_supabase.py
+│       └── test_new_endpoints.py
+├── chatbot/
+│   ├── README.md
+│   ├── ARCHITECTURE.md
+│   ├── FLOWCHART.md
+│   ├── requirements.txt
+│   ├── app/
+│   │   ├── README.md
+│   │   ├── main.py
+│   │   ├── config.py
+│   │   ├── api/
+│   │   │   ├── README.md
+│   │   │   └── router.py
+│   │   ├── integrations/
+│   │   │   ├── README.md
+│   │   │   └── ai_engine_adapter.py
+│   │   ├── models/
+│   │   │   ├── README.md
+│   │   │   └── chat_models.py
+│   │   ├── rag/
+│   │   │   ├── README.md
+│   │   │   ├── catalogue_adapter.py
+│   │   │   ├── chunking.py
+│   │   │   ├── embeddings.py
+│   │   │   ├── errors.py
+│   │   │   ├── ingestion.py
+│   │   │   ├── knowledge_loader.py
+│   │   │   ├── models.py
+│   │   │   ├── normalization.py
+│   │   │   ├── qdrant_store.py
+│   │   │   └── retriever.py
+│   │   └── services/
+│   │       ├── README.md
+│   │       ├── conversation.py
+│   │       ├── customer_context.py
+│   │       ├── dependencies.py
+│   │       ├── groq_answer.py
+│   │       ├── intent_router.py
+│   │       ├── orchestrator.py
+│   │       ├── product_catalog.py
+│   │       ├── recommendation.py
+│   │       └── response_mapper.py
+│   ├── knowledge/
+│   │   ├── README.md
+│   │   └── hdfc/
+│   │       ├── README.md
+│   │       ├── manifest.json
+│   │       └── general/
+│   │           ├── README.md
+│   │           ├── imps.md
+│   │           ├── kyc.md
+│   │           ├── neft.md
+│   │           ├── rtgs.md
+│   │           └── upi.md
+│   ├── scripts/
+│   │   ├── README.md
+│   │   └── ingest_hdfc_knowledge.py
+│   └── tests/
+│       ├── README.md
+│       └── pytest test modules
+├── frontend/
+│   ├── README.md
+│   ├── package.json
+│   ├── package-lock.json
+│   ├── bun.lock
+│   ├── index.html
+│   ├── vite.config.ts
+│   ├── tsconfig.json
+│   ├── metadata.json
+│   ├── public/
+│   │   ├── README.md
+│   │   └── logo.png
 │   └── src/
-│       ├── main.jsx                  # React application entry point
-│       ├── App.jsx                   # Layout, router, and navigation shell
+│       ├── README.md
+│       ├── App.jsx
+│       ├── App.css
+│       ├── index.css
+│       ├── main.jsx
+│       ├── components/
+│       │   └── README.md
+│       ├── contexts/
+│       │   └── README.md
 │       ├── pages/
-│       │   ├── Login.jsx             # Employee authentication screen
-│       │   ├── Dashboard.jsx         # Executive metrics & real-time alerts
-│       │   ├── Customers.jsx         # Searchable customer directory & filters
-│       │   ├── Customer360.jsx       # Deep-dive analytics, gap reports, & NBO preview
-│       │   ├── Campaigns.jsx         # Campaign creation & AI copy generation studio
-│       │   ├── CampaignAnalytics.jsx # Funnel metrics (opens, clicks, conversions)
-│       │   ├── Segments.jsx          # Customer segment distribution & demographics
-│       │   └── Analytics.jsx         # Portfolio-wide financial health analytics
-│       ├── services/                 # API client & fetch wrappers
-│       └── contexts/                 # React state & Auth context providers
-│
-└── chatbot/                          # ── Standalone Banking Assistant & RAG ──
-    └── README.md                     # FastEmbed + Qdrant + FastAPI Chatbot module guide
+│       │   └── README.md
+│       └── services/
+│           └── README.md
+└── only_test/
+    ├── README.md
+    └── test.py
 ```
 
----
+## 8. Directory Responsibilities
 
-## 6. End-to-End AI Engine Pipeline
+| Directory | Responsibility | Main Consumers |
+| --- | --- | --- |
+| `Python/` | Backend API, AI pipeline, database utilities, and local datasets. | Frontend dashboard, chatbot adapter, developers, operators. |
+| `Python/ai_engine/` | Core banking intelligence and recommendation logic. | Backend API and chatbot recommendation integration. |
+| `Python/ai_engine/config/` | Tunable YAML decision parameters. | AI engine modules. |
+| `Python/Database_csvs/` | Development and fallback banking data. | Data loader, generation scripts, tests, demos. |
+| `Python/database_generation_scripts/` | Synthetic data generation. | Developers preparing local datasets. |
+| `Python/scripts/` | Operational migration and validation scripts. | Developers and operators. |
+| `chatbot/` | Standalone chatbot application. | Chat clients and API consumers. |
+| `chatbot/app/api/` | Chatbot HTTP routes. | Chatbot FastAPI app. |
+| `chatbot/app/integrations/` | Adapter boundary to sibling systems. | Chatbot services. |
+| `chatbot/app/models/` | API and domain data contracts. | Router, services, tests. |
+| `chatbot/app/rag/` | Knowledge ingestion, embeddings, storage, and retrieval. | Chatbot orchestrator and ingestion scripts. |
+| `chatbot/app/services/` | Conversation, routing, orchestration, recommendations, and response mapping. | Chatbot API routes. |
+| `chatbot/knowledge/` | Curated source documents for retrieval. | Ingestion pipeline and retriever. |
+| `chatbot/scripts/` | Chatbot data preparation scripts. | Developers and operators. |
+| `chatbot/tests/` | Automated chatbot test coverage. | Developers and CI. |
+| `frontend/` | Employee dashboard application. | Bank employees and frontend developers. |
+| `frontend/src/components/` | Reusable UI building blocks. | Frontend pages. |
+| `frontend/src/contexts/` | Shared React state. | Frontend application tree. |
+| `frontend/src/pages/` | Route-level dashboard screens. | React Router configuration. |
+| `frontend/src/services/` | API client layer. | Frontend pages and components. |
+| `frontend/public/` | Static assets. | Vite build and development server. |
+| `only_test/` | Isolated test scratch area. | Developers only. |
 
-The AI Engine executes an 11-step pipeline for every customer analysis request:
+## 9. AI Engine Module Responsibilities
 
-```
-[Raw Customer Data + Transactions + Holdings]
-                      │
-                      ▼
- 1. DATA INGESTION (`data_loader.py`)
-    ├── Reads Supabase PostgreSQL or local CSV fallback
-    └── Normalizes merchant codes, timestamps, and debit/credit amounts
-                      │
-                      ▼
- 2. ROLLING-WINDOW FEATURE COMPUTATION (`feature_engine.py`)
-    ├── 7, 30, 60, 90, 180, 365-day rolling totals & velocity
-    └── Produces structured `CustomerFeatureSet`
-                      │
-                      ▼
- 3. BEHAVIORAL & CASH FLOW PROFILING (`behavior_engine.py`)
-    ├── Monthly net savings rate & expense-to-income ratios
-    └── Category spend distributions (Dining, Shopping, Travel, etc.)
-                      │
-                      ▼
- 4. REAL-TIME EVENT DETECTION (`event_engine.py`)
-    └── Detects flight payments, salary hikes, large debits, medical bills
-                      │
-                      ▼
- 5. FINANCIAL ANALYST & GAP DETECTION (`financial_analyst.py`)
-    ├── Calculates Financial Health Score (0-100)
-    └── Identifies gaps (e.g. `NO_INVESTMENT`, `OVERSPENDING_DINING`)
-                      │
-                      ▼
- 6. HARD ELIGIBILITY FILTERING (`eligibility_engine.py`)
-    └── Discards products where customer fails age, income, or existing ownership rules
-                      │
-                      ▼
- 7. BEHAVIORAL PRODUCT FIT SCORING (`product_fit_engine.py`)
-    └── Computes fit score between customer behavior tags and product features
-                      │
-                      ▼
- 8. NEXT BEST OFFER RANKING (`nbo_engine.py`)
-    └── Weighted ensemble ranking $\rightarrow$ Selects winning recommendation
-                      │
-                      ▼
- 9. AUDIT & EXPLAINABILITY PACKAGING (`explainability_engine.py`)
-    └── Formulates deterministic, auditable bullet points (no LLM hallucinations)
-                      │
-                      ▼
-10. MARKETING SAFETY CHECK (`marketing_guard.py`)
-    ├── Verifies DND status, consent flags, and campaign fatigue cooldowns
-    └── If blocked: Aborts outreach / logs safety reason
-                      │
-                      ▼
-11. CONTEXT-AWARE GENAI GENERATION (`genai_service.py`)
-    └── Passes exact numbers, time context, and age cohort to Groq LLM
-                      │
-                      ▼
-[Personalized Campaign Offer Displayed on Dashboard]
-```
+| Module | Responsibility | Typical Inputs | Typical Outputs |
+| --- | --- | --- | --- |
+| `data_loader.py` | Load customer, transaction, catalogue, and holding datasets. | CSV files, Supabase tables, environment configuration. | DataFrames, dictionaries, structured source records. |
+| `feature_engine.py` | Build customer features and rolling-window metrics. | Customer profile, transactions, holdings. | Customer feature sets and aggregate measures. |
+| `behavior_engine.py` | Interpret income and spending behavior. | Feature set and categorized transactions. | Behavioral summaries, category trends, cash-flow indicators. |
+| `event_engine.py` | Detect high-signal recent events. | Transactions, thresholds, merchant categories. | Event triggers and event metadata. |
+| `financial_analyst.py` | Compute financial health and detect product need gaps. | Features, behavior, holdings. | Gap labels, health score, risk and opportunity indicators. |
+| `segmentation.py` | Assign lifecycle or behavioral segments. | Customer demographics and features. | Segment identifiers and descriptors. |
+| `clustering_engine.py` | Support customer clustering and cohort analysis. | Feature matrices. | Cluster assignments or analytics. |
+| `eligibility_engine.py` | Apply hard eligibility filters. | Customer profile, products, credit and compliance attributes. | Eligible product candidates and rejection reasons. |
+| `product_fit_engine.py` | Score behavioral fit for eligible products. | Eligible products, customer needs, events, category behavior. | Product-fit scores and fit reasons. |
+| `nbo_engine.py` | Rank final next-best-offer recommendations. | Fit scores, business weights, gap urgency, eligibility output. | Ranked recommendations. |
+| `explainability_engine.py` | Produce human-readable and auditable evidence. | Recommendation payloads and source facts. | Explanation text, reason codes, supporting facts. |
+| `marketing_guard.py` | Enforce marketing safety and contact rules. | Consent status, fatigue counters, channel data, recommendation. | Allow, block, defer, or channel guidance. |
+| `genai_service.py` | Generate personalized message copy. | Recommendation, customer context, channel, time context. | Campaign copy or deterministic fallback text. |
+| `indian_calendar.py` | Provide local calendar and festival context. | Current or requested dates. | Campaign timing suggestions and contextual prompts. |
 
----
+## 10. Data Model and Dataset Overview
 
-## 7. API Reference
+The repository includes synthetic banking datasets for development and demonstration purposes. These files are intentionally located in the repository so the platform can run without requiring a remote data warehouse during early development.
 
-All protected endpoints require an `Authorization: Bearer <token>` header obtained via `/auth/login`.
+### 10.1 Customer Data
 
-### Authentication
-- `POST /auth/login` — Authenticate employee credentials; returns JWT token, employee role, and profile.
+Customer data includes identifiers, demographics, income signals, contact information where available, and profile attributes needed for segmentation, eligibility, and customer 360 rendering.
 
-### Dashboard & Metrics
-- `GET /api/dashboard/stats` — High-level KPI metrics (total customers, total campaigns, active offers, conversion rates).
-- `GET /api/analytics` — Portfolio-level distribution of financial health scores, income brackets, and category spending.
+### 10.2 Transaction Data
 
-### Customer Intelligence
-- `GET /api/customers` — Paginated list of bank customers with quick filters (search, segment, risk rating).
-- `GET /api/customers/{customer_id}/analyze` — Executes full AI Engine pipeline for a specific customer; returns Customer 360 profile, detected gaps, health score, NBO recommendation, and explainability trail.
-- `GET /api/customers/{customer_id}/holdings` — Returns current credit cards, debit cards, loans, and investment accounts.
+Transaction data powers most behavioral intelligence. It supports:
 
-### Campaign Management & AI Generation
-- `POST /api/campaigns` — Create and schedule a new marketing campaign (single or batch).
-- `GET /api/campaigns` — List all historical and active campaigns with performance summaries.
-- `PATCH /api/campaigns/{campaign_id}/status` — Update campaign lifecycle state (`Active`, `Draft`, `Completed`).
-- `GET /api/campaigns/{product}/customers` — Fetch all eligible NBO customers for a selected bank product.
-- `POST /api/campaigns/generate-personalised-message` — Generate Groq LLM dynamic copy for a specific customer, product, and channel.
-- `POST /api/campaigns/generate-content` — Generate cohort-based general marketing copy.
+- Rolling spend windows.
+- Merchant and category analysis.
+- Income detection.
+- Savings-rate estimation.
+- Travel, medical, rent, utility, shopping, dining, and investment signals.
+- Event detection and recent behavior triggers.
 
-### Campaign Analytics & Closed-Loop Tracking
-- `POST /api/campaigns/{campaign_id}/analytics/event` — Ingest interaction events (`opened`, `clicked`, `applied`, `converted`).
-- `GET /api/campaigns/{campaign_id}/analytics` — Detailed funnel breakdown and conversion rates for a specific campaign.
-- `GET /api/campaigns/insights` — AI-powered insights on campaign ROI and optimal engagement channels.
+### 10.3 Product Catalogues
 
-### Customer Segments & Health
-- `GET /api/segments` — Summary of customer distribution across lifecycle and behavioral segments.
-- `GET /health` — API service health check.
+Product catalogue CSV files describe available banking products, including credit cards, debit cards, loans, insurance, and investment products. They are used for eligibility, product-fit scoring, and recommendation generation.
 
----
+### 10.4 Customer Holdings
 
-## 8. Technology Stack
+Generated customer 360 files describe existing accounts, cards, loans, deposits, insurance policies, and investment relationships. Existing holdings are important because a responsible recommendation system should not promote redundant or irrelevant products.
 
-| Domain | Technologies & Libraries |
-|---|---|
-| **Backend Framework** | Python 3.10+, FastAPI, Uvicorn, Pydantic v2 |
-| **Authentication & Security** | OAuth2 Password Bearer, Jose (JWT), Passlib (SHA256 Crypt) |
-| **AI / Machine Learning** | Scikit-learn, Pandas, NumPy, Groq API (Llama 3 / Mixtral) |
-| **Caching & Event Management**| Redis (In-Memory Caching, Rate Limiting, Pub/Sub) |
-| **Database & ORM** | PostgreSQL, Supabase Python Client, SQLAlchemy, Psycopg2 |
-| **Frontend Framework** | React 19, Vite, React Router DOM |
-| **Styling & Animation** | Tailwind CSS v4, Lucide React, Framer Motion |
-| **Data Visualization** | Recharts |
-| **Vector Store & Chatbot** | Qdrant, FastEmbed (Embeddings & Semantic Search) |
-| **Configuration** | PyYAML, Python-Dotenv |
+### 10.5 Knowledge Documents
 
----
+Chatbot knowledge documents are curated markdown files. They are indexed into Qdrant so the chatbot can retrieve relevant source chunks and provide grounded responses to general banking questions.
 
-## 9. Setup & Installation Guide
+## 11. Recommendation Lifecycle
 
-### 9.1 Prerequisites
-Ensure you have the following installed on your machine:
-- **Python 3.10+**
-- **Node.js 18+ & npm** (or Bun)
-- **Redis Server** (optional for local mock mode, required for full caching layer)
-- **Git**
+A typical recommendation moves through the following lifecycle:
 
-### 9.2 Environment Configuration
+1. A user opens a customer or recommendation screen in the frontend.
+2. The frontend calls the backend API through `frontend/src/services/api.js`.
+3. The backend resolves the customer and loads relevant data.
+4. The AI engine builds features and identifies financial patterns.
+5. The event and financial-analysis engines detect timely opportunities and gaps.
+6. The eligibility engine removes products that should not be offered.
+7. The product-fit engine scores products that remain eligible.
+8. The NBO engine ranks the strongest recommendations.
+9. The explainability engine creates transparent evidence.
+10. The marketing guard verifies whether outreach is allowed.
+11. The GenAI service creates copy if message generation is available and allowed.
+12. The backend returns the full response to the frontend.
+13. The employee reviews the output, launches or adjusts campaigns, and monitors analytics.
 
-Create a `.env` file inside the `Python/` directory:
+## 12. API Surface Overview
 
-```env
-# Python/.env
-SECRET_KEY=npnbank-super-secret-key-2024
-ACCESS_TOKEN_EXPIRE_MINUTES=480
+The exact backend API surface should be confirmed from `Python/api_server.py`, but the application is organized around these API concerns:
 
-# Groq GenAI API (Optional - uses robust fallback if omitted)
-GROQ_API_KEY=your_groq_api_key_here
+- Authentication and token issuance for employees.
+- Customer listing and customer profile retrieval.
+- Customer 360 details.
+- Recommendation and next-best-offer retrieval.
+- Campaign creation and launch workflows.
+- Campaign analytics and status tracking.
+- AI-generated copy support where configured.
+- Health and operational checks.
 
-# Supabase Configuration (Optional - falls back to local CSVs)
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_KEY=your_supabase_anon_key
+The chatbot API surface is intentionally smaller:
 
-# Redis Configuration (Optional - defaults to localhost:6379)
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_PASSWORD=
-```
+- `POST /chat` returns a full structured chatbot response.
+- `POST /ask` returns a simplified answer and conversation identifier.
+- `GET /health` returns component readiness information.
 
-Create a `.env` file inside the `frontend/` directory:
+## 13. Configuration
 
-```env
-# frontend/.env
-VITE_API_BASE_URL=http://localhost:8000
-```
+### 13.1 Backend Configuration
 
----
+The backend can use environment variables for:
 
-### 9.3 Backend Setup
+- JWT secret configuration.
+- Access token expiry behavior.
+- Supabase database URL and keys.
+- Groq API access.
+- Gmail sender and app-password configuration.
+- Twilio account and sender configuration.
+- Runtime mode or deployment-specific options.
 
-1. Navigate to the `Python/` directory:
-   ```bash
-   cd Python
-   ```
-2. Create and activate a Python virtual environment:
-   ```bash
-   # Windows (PowerShell)
-   python -m venv venv
-   .\venv\Scripts\Activate.ps1
+Use a local `.env` file for development secrets. Do not commit real credentials.
 
-   # macOS / Linux
-   python3 -m venv venv
-   source venv/bin/activate
-   ```
-3. Install backend dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+### 13.2 AI Engine Configuration
 
----
+AI engine behavior is controlled through YAML files in `Python/ai_engine/config/`:
 
-### 9.4 Frontend Setup
+- `marketing.yaml` controls marketing and campaign-related behavior.
+- `nbo_weights.yaml` controls ranking weights for next-best-offer scoring.
+- `thresholds.yaml` controls thresholds used by financial, event, and recommendation logic.
 
-1. Navigate to the `frontend/` directory:
-   ```bash
-   cd ../frontend
-   ```
-2. Install npm packages:
-   ```bash
-   npm install
-   ```
+Changes to these files can materially change recommendation output, so they should be reviewed like code changes.
 
----
+### 13.3 Frontend Configuration
 
-### 9.5 Chatbot Setup (Optional)
+Frontend configuration follows Vite conventions and should be based on `.env.example`. The frontend should call the backend through the centralized service module rather than duplicating base URLs across pages.
 
-1. Navigate to the `chatbot/` directory:
-   ```bash
-   cd ../chatbot
-   ```
-2. Follow instructions in `chatbot/README.md` for FastEmbed and Qdrant setup.
+### 13.4 Chatbot Configuration
 
----
+The chatbot can run with local embedded vector storage or a remote Qdrant instance depending on environment variables. It also accepts configuration for collection names, embedding model behavior, RAG top-k values, service port, and the AI engine directory.
 
-## 10. Running the Platform
+## 14. Setup and Installation
 
-### Step 1: Start the Backend API Server
-From the `Python/` directory:
+### 14.1 Prerequisites
+
+Install the following before running the full platform:
+
+- Python 3.10 or newer.
+- Node.js compatible with the frontend dependencies.
+- npm for frontend package management.
+- Optional Supabase or PostgreSQL database.
+- Optional Qdrant instance, unless using local embedded mode.
+- Optional Groq API key for LLM-backed copy generation.
+- Optional email and SMS provider credentials for real campaign delivery integrations.
+
+### 14.2 Backend Setup
+
 ```bash
-# Windows / Linux
+cd Python
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
 uvicorn api_server:app --reload --port 8000
 ```
-*The FastAPI interactive Swagger documentation will be accessible at [http://localhost:8000/docs](http://localhost:8000/docs).*
 
-### Step 2: Start the Frontend Dashboard
-From the `frontend/` directory:
+On Windows PowerShell, activate the virtual environment with:
+
+```powershell
+.\venv\Scripts\Activate.ps1
+```
+
+### 14.3 Frontend Setup
+
 ```bash
+cd frontend
+npm install
 npm run dev
 ```
-*The React Dashboard will be available at [http://localhost:3000](http://localhost:3000) or [http://localhost:5173](http://localhost:5173).*
 
-### Step 3: Log In to the Dashboard
-Use the default prototype employee credentials:
-- **Email:** `employee@npnbank.com`
-- **Password:** `npnbank@2024`
-- *(Or Senior Manager: `manager@npnbank.com` / `manager@2024`)*
+The frontend development server is configured to run through Vite. The package script uses port 3000.
 
----
+### 14.4 Chatbot Setup
 
-## 11. Testing & Verification
-
-### Running the CLI AI Pipeline Runner
-To verify the complete 11-step AI intelligence pipeline on a sample customer from the terminal:
 ```bash
-cd Python
-python ai_engine/run_pipeline.py CUST00125
+pip install -r chatbot/requirements.txt
+python chatbot/scripts/ingest_hdfc_knowledge.py
+python -m uvicorn chatbot.app.main:app --host 0.0.0.0 --port 8001
 ```
 
-### Running Backend Unit & Endpoint Tests
+Knowledge ingestion should be rerun whenever the chatbot knowledge manifest or markdown documents change.
+
+## 15. Running the Platform Locally
+
+A typical local development session uses multiple terminals:
+
+### Terminal 1: Backend
+
 ```bash
 cd Python
-python test_api.py
+source venv/bin/activate
+uvicorn api_server:app --reload --port 8000
+```
+
+### Terminal 2: Frontend
+
+```bash
+cd frontend
+npm run dev
+```
+
+### Terminal 3: Chatbot
+
+```bash
+python -m uvicorn chatbot.app.main:app --host 0.0.0.0 --port 8001
+```
+
+### Terminal 4: Optional Chatbot Ingestion
+
+```bash
+python chatbot/scripts/ingest_hdfc_knowledge.py
+```
+
+## 16. Testing and Validation
+
+### 16.1 Documentation Checks
+
+Use these checks to confirm README coverage and professional formatting expectations:
+
+```bash
+python - <<'PY'
+from pathlib import Path
+missing=[]
+for p in Path('.').rglob('*'):
+    if not p.is_dir():
+        continue
+    if '.git' in p.parts or 'node_modules' in p.parts or '__pycache__' in p.parts:
+        continue
+    if not (p / 'README.md').exists():
+        missing.append(str(p))
+print('All maintained directories have README.md' if not missing else '\n'.join(missing))
+PY
+```
+
+```bash
+python - <<'PY'
+import pathlib
+bad=[]
+for p in pathlib.Path('.').rglob('README.md'):
+    if 'node_modules' in p.parts or '.git' in p.parts:
+        continue
+    for ch in p.read_text(errors='ignore'):
+        code=ord(ch)
+        if code > 0xFFFF or 0x2600 <= code <= 0x27BF or code == 0xfe0f:
+            bad.append(f'{p}: {ch} U+{code:04X}')
+            break
+print('No emoji-like characters found in maintained README.md files' if not bad else '\n'.join(bad))
+PY
+```
+
+### 16.2 Backend Checks
+
+```bash
+cd Python
+python test_init.py
 python test_json_parse.py
+python test_api.py
 ```
 
-### Validating Gap Detection Scenarios
-- **Scenario A (No Investments):** Analyze customer `CUST00125` (Salaried software engineer earning ₹12L/yr with zero investment debits) $\rightarrow$ Expected output: Flag `NO_INVESTMENT` gap with SIP / Mutual Fund recommendation.
-- **Scenario B (High Dining Spend):** Analyze customer with >15% food spend $\rightarrow$ Expected output: Flag `OVERSPENDING_DINING` gap with Dining Cashback Card recommendation.
+Some backend checks may require local dependencies or configured environment variables.
 
----
+### 16.3 Chatbot Checks
 
-## 12. Contributing & Pull Request Guidelines
+```bash
+python -m pytest chatbot/tests -q
+```
 
-We welcome contributions from all team members! Please adhere to the following workflow:
+Corpus-dependent integration tests may require the chatbot knowledge base to be ingested before running the full suite.
 
-1. **Branch Naming Conventions:**
-   - `feature/<name>-<feature-description>` (e.g., `feature/kartik-redis-caching`)
-   - `fix/<name>-<bug-description>` (e.g., `fix/sarthak-schema-alignment`)
-   - `docs/<name>-<docs-update>`
-2. **Coding Standards:**
-   - Backend: Follow PEP 8 guidelines and include explicit type hints (`typing`).
-   - Engines: Ensure all analytical modules handle null/missing data gracefully without throwing unhandled exceptions.
-   - Frontend: Maintain component modularity in `frontend/src/pages/` and utilize Tailwind CSS design tokens.
-3. **Pull Request Checklist:**
-   - [ ] Local pipeline test (`run_pipeline.py`) passes without errors.
-   - [ ] FastAPI endpoints verified via Swagger UI (`/docs`).
-   - [ ] Environment variables updated in `.env.example` if new keys are added.
-   - [ ] Clean git commit history with descriptive commit messages.
+### 16.4 Frontend Checks
 
----
+```bash
+cd frontend
+npm run lint
+npm run build
+```
 
-## 👥 Project Team & Acknowledgments
+The frontend lint script runs TypeScript compiler checks through the configured package script.
 
-- **Backend, System Architecture & Redis Implementation:** Backend Engineering Team
-- **AI Engine & Financial Decisioning:** Analytics & Intelligence Team
-- **Frontend Dashboard & UI/UX:** Frontend Engineering Team
-- **Database & Data Pipeline:** Data Engineering Team
-- **Chatbot & Semantic Embeddings:** Conversational AI Team
+### 16.5 Git Hygiene Check
 
-*Built for NPN Bank — Cognizant Technology Solutions.*
+```bash
+git diff --check
+```
+
+This check detects whitespace errors in the current diff.
+
+## 17. Security and Compliance Considerations
+
+This repository is a prototype or demonstration platform and should be reviewed before production use. Important security considerations include:
+
+- Replace prototype employee accounts with a real identity provider.
+- Store all secrets in a managed secret store or secure deployment environment.
+- Use least-privilege database credentials.
+- Add rate limiting for public or semi-public endpoints.
+- Validate and audit campaign delivery integrations.
+- Ensure consent and do-not-disturb rules match applicable legal and organizational requirements.
+- Avoid logging sensitive customer data, full phone numbers, or authentication material.
+- Review any LLM-generated copy before using it in regulated customer communications.
+- Maintain clear audit trails for recommendation decisions and campaign approvals.
+
+## 18. Observability and Operations
+
+For operational readiness, the platform should be monitored across several dimensions:
+
+- Backend API availability and latency.
+- Frontend build and deployment health.
+- Chatbot service readiness through `/health`.
+- Qdrant collection availability and vector count.
+- Supabase or PostgreSQL connection health.
+- Recommendation pipeline execution time.
+- Campaign creation and delivery success rates.
+- Error rates for external services such as Groq, email, and SMS providers.
+- Data freshness for customer, transaction, product, and holding datasets.
+
+Production deployments should also add structured logging, request correlation identifiers, metrics, and alerting.
+
+## 19. Development Guidelines
+
+Follow these guidelines when contributing:
+
+- Keep backend API request handling separate from AI decisioning logic.
+- Keep reusable frontend UI in `frontend/src/components/` and route-specific composition in `frontend/src/pages/`.
+- Keep chatbot orchestration in services and HTTP-specific behavior in routes.
+- Keep generated data and manually curated source data clearly separated.
+- Update directory READMEs when adding new folders or major files.
+- Update tests when changing schemas, API response contracts, recommendation logic, or chatbot behavior.
+- Avoid committing local credentials, virtual environments, dependency folders, caches, or generated runtime stores.
+- Prefer deterministic and explainable logic for regulated banking decisions.
+
+## 20. Known Development Modes
+
+The project supports several development modes:
+
+### 20.1 Local CSV Mode
+
+Use local files under `Python/Database_csvs/` when Supabase is not configured. This is useful for local demos and early feature development.
+
+### 20.2 Supabase-Backed Mode
+
+Use Supabase or PostgreSQL when campaign state, shared datasets, and deployed API behavior are required. Migration and push scripts in `Python/` and `Python/scripts/` help prepare tables and load data.
+
+### 20.3 Chatbot Local Vector Mode
+
+Use local embedded Qdrant behavior for local chatbot development. This avoids needing a remote vector database while testing RAG behavior.
+
+### 20.4 Chatbot Remote Vector Mode
+
+Use a configured Qdrant URL and API key for shared or deployed chatbot knowledge retrieval.
+
+## 21. Troubleshooting
+
+### Backend import errors
+
+Run backend commands from the `Python/` directory or ensure the repository paths are available to Python. The chatbot also adjusts paths so it can access the sibling AI engine.
+
+### Missing data
+
+Confirm that the expected CSV files exist under `Python/Database_csvs/` or that Supabase credentials are configured correctly.
+
+### Empty chatbot retrieval results
+
+Run the chatbot ingestion script and confirm the Qdrant collection contains points.
+
+### Frontend API failures
+
+Confirm the backend is running on the expected port and that the frontend API service points to the correct base URL.
+
+### LLM copy generation failures
+
+Confirm the Groq API key is configured. The system should use deterministic fallback behavior where implemented.
+
+### Campaign delivery failures
+
+Confirm email or SMS provider credentials are configured and valid. For local development, avoid sending real customer communications.
+
+## 22. Documentation Standards
+
+Every maintained source directory in this repository should include a `README.md` explaining:
+
+- The directory purpose.
+- Important files or subdirectories.
+- Operational notes.
+- How the directory relates to the rest of the platform.
+
+Generated caches, dependency directories, virtual environments, Python bytecode directories, and external package folders are intentionally excluded from this requirement.
+
+## 23. Current Documentation Coverage
+
+This repository includes README documentation for:
+
+- Project root.
+- Python backend and AI engine directories.
+- AI engine configuration.
+- Database CSV assets and generated customer 360 outputs.
+- Database generation scripts.
+- Operational Python scripts.
+- Chatbot root, app package, API routes, integrations, models, RAG, services, knowledge, corpus, scripts, and tests.
+- Frontend root, public assets, source tree, components, contexts, pages, and services.
+- Isolated test scratch area.
+
+## 24. Summary
+
+NPN Bank is structured as a practical banking intelligence platform with separate but connected layers for data, decisioning, APIs, user experience, and conversational support. The root README serves as the architectural map for the entire repository, while the README files in each folder provide local guidance for contributors working in specific areas.
