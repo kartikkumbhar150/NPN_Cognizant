@@ -13,7 +13,7 @@ An enterprise-grade, AI-driven banking intelligence and hyper-personalized marke
 
 ---
 
-## 📑 Table of Contents
+## Table of Contents
 
 - [1. Executive Summary & Problem Statement](#1-executive-summary--problem-statement)
 - [2. System Architecture](#2-system-architecture)
@@ -69,25 +69,25 @@ Traditional Mass Marketing               NPN Hyper-Personalized AI Marketing
 
 ```mermaid
 graph TD
-    subgraph Client Layer ["🖥️ Frontend & Client Layer"]
+    subgraph Client Layer ["Frontend & Client Layer"]
         UI["React 19 Dashboard (Vite + Tailwind)"]
         CB["Banking Chatbot Interface"]
     end
 
-    subgraph API Gateway ["⚡ API Gateway & Auth"]
+    subgraph API Gateway ["API Gateway & Auth"]
         FastAPI["FastAPI REST Server (:8000)"]
         JWT["OAuth2 / JWT Authentication"]
         CORS["CORS & Request Middleware"]
     end
 
-    subgraph Caching Layer ["🚀 Redis High-Speed Layer"]
+    subgraph Caching Layer ["Redis High-Speed Layer"]
         R_C360["Customer 360 Aggregate Cache"]
         R_SESS["Session & Token Blocklist"]
         R_THROT["Campaign Throttling & Cooldowns"]
         R_PUBSUB["Pub/Sub Event Bus"]
     end
 
-    subgraph AI Pipeline ["🧠 Banking AI Intelligence Pipeline (v2.0 / v3.0)"]
+    subgraph AI Pipeline ["Banking AI Intelligence Pipeline (v2.0 / v3.0)"]
         FE["Feature Engine (Rolling Windows)"]
         BE["Behavior Engine (Spending Trajectory)"]
         EE["Event Engine (Triggers & Thresholds)"]
@@ -100,7 +100,7 @@ graph TD
         GENAI["GenAI Service (Groq LLM / Time & Cohort Aware)"]
     end
 
-    subgraph Data Layer ["💾 Persistent Storage & Vector Store"]
+    subgraph Data Layer ["Persistent Storage & Vector Store"]
         PG["Supabase / PostgreSQL Database"]
         CSV["Synthetic Banking Datasets (CSV)"]
         QD["Qdrant Vector DB (Chatbot Knowledge)"]
@@ -559,7 +559,7 @@ We welcome contributions from all team members! Please adhere to the following w
 
 ---
 
-## 👥 Project Team & Acknowledgments
+##  Project Team & Acknowledgments
 
 - **Backend, System Architecture & Redis Implementation:** Backend Engineering Team
 - **AI Engine & Financial Decisioning:** Analytics & Intelligence Team

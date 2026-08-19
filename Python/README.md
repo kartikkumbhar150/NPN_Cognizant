@@ -4,7 +4,7 @@ This directory contains the FastAPI server, modular analytical engines, database
 
 ---
 
-## 🏗️ Architecture Overview
+## Architecture Overview
 
 The backend is structured into modular, decoupled layers:
 
@@ -31,7 +31,7 @@ The backend is structured into modular, decoupled layers:
 
 ---
 
-## 🔄 AI Engine Pipeline Flowchart
+## AI Engine Pipeline Flowchart
 
 The AI engine processes customer and transaction data through multiple analytical and decision-making stages before generating a personalized banking recommendation.
 
@@ -111,7 +111,7 @@ Analysis       Detection      Analysis           Analysis
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### 1. Install Dependencies
 
